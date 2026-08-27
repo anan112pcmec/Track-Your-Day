@@ -1,0 +1,17 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "track-your-day"
+path = "src/main.rs"
+
+[dependencies]
+separation       = { workspace = true }
+database         = { workspace = true }
+watcher-mutator  = { workspace = true }
+watcher-reactive = { workspace = true }
+api              = { workspace = true }
+tokio            = { workspace = true }
+anyhow           = { workspace = true }

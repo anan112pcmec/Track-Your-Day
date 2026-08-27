@@ -1,0 +1,10 @@
+[package]
+name = "watcher-mutator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+separation  = { workspace = true }
+tokio       = { workspace = true }
+anyhow      = { workspace = true }
+chrono      = { workspace = true }

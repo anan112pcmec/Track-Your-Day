@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cli",
+    "crates/watcher-mutator",
+    "crates/watcher-reactive",
+    "crates/database",
+    "crates/separation",
+    "crates/api",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# crate-crate internal, semua nunjuk ke folder lokal
+separation      = { path = "crates/separation" }
+database        = { path = "crates/database" }
+watcher-mutator  = { path = "crates/watcher-mutator" }
+watcher-reactive = { path = "crates/watcher-reactive" }
+api             = { path = "crates/api" }

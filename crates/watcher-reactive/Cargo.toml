@@ -1,0 +1,10 @@
+[package]
+name = "watcher-reactive"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+separation  = { workspace = true }
+async-trait = { workspace = true }
+tokio       = { workspace = true }
+anyhow      = { workspace = true }
