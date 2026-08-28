@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
                 .split(f.area());
 
             // ---------------- HEADER ----------------
-            let header = Paragraph::new(" ⏱️  TRACK YOUR DAY — Live Terminal Dashboard")
+            let header = Paragraph::new(" TRACK YOUR DAY —")
                 .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
                 .block(Block::default().borders(Borders::ALL).title(" App "));
             f.render_widget(header, chunks[0]);
@@ -147,9 +147,11 @@ async fn main() -> Result<()> {
                         Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
                     ),
                 ]),
-                Line::from("• `Running Thread"),
-                Line::from(""),
-                Line::from(Span::styled("Semua crate terisolasi sempurna!", Style::default().fg(Color::DarkGray))),
+                Line::from(vec![
+                    Span::raw("Running Thread : "),
+                    Span::styled(
+                        format!("{} thread", ), style)
+                ]),
             ];
             let overview_panel = Paragraph::new(overview_text)
                 .wrap(Wrap { trim: true })
