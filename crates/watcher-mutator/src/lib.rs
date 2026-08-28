@@ -12,15 +12,51 @@
 //! channel untuk memberi tahu pihak lain bahwa ada data baru.
 
 use chrono::Utc;
+use rdev::{listen, EventType};
 use separation::{ActivityEvent, ActivityKind, ActivityStore};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
+use active_win_pos_rs::get_active_window;
+
+pub struct KeyCounter {
+    count: Arc<AtomicUsize>
+}
+
+impl KeyCounter {
+    pub fn start() -> Self {
+        let count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+        let counter_for_thread = count.clone();
+
+
+        std::thread::spawn(move || {
+            let callback = move | event: rdev::Event| {
+                if let EventType::KeyPress(_) = event.event_type {
+                    counter_for_thread.fetch_add(1, Ordering::Relaxed);
+                }
+            };
+
+            if let Err(err) = listen(callback) {
+                eprintln!("[watcher-mutator] gagal pasang keyboard hook: {err:?}");
+            }
+
+        });
+
+        
+        Self {count}
+    }
+
+    pub fn take_and_reset(&self) -> usize {
+        self.count.swap(0, Ordering::Relaxed)
+    }
+}
 
 pub struct MutatorWatcher {
     store: Arc<dyn ActivityStore>,
     notify: broadcast::Sender<ActivityEvent>,
     interval: Duration,
+    key_counter: KeyCounter,
 }
 
 impl MutatorWatcher {
@@ -28,8 +64,9 @@ impl MutatorWatcher {
         store: Arc<dyn ActivityStore>,
         notify: broadcast::Sender<ActivityEvent>,
         interval: Duration,
+        key_counter: KeyCounter,
     ) -> Self {
-        Self { store, notify, interval }
+        Self { store, notify, interval, key_counter }
     }
 
     /// Jalankan loop watcher. Dipanggil sebagai tokio task terpisah dari `cli`.
@@ -38,21 +75,37 @@ impl MutatorWatcher {
         loop {
             tick.tick().await;
 
+            let keystrokes = self.key_counter.take_and_reset();
+            let elapsed_minutes = self.interval.as_secs_f64() / 60.0;
+            let wpm = ((keystrokes as f64 / 5.0) / elapsed_minutes).round() as u32;
+
             // TODO: ganti placeholder ini dengan capture asli:
             // - active window (app + title)
             // - hitung WPM dari event keyboard
             // - deteksi idle
-            let event = ActivityEvent {
+
+            let eventwpm = ActivityEvent {
                 timestamp: Utc::now(),
-                kind: ActivityKind::ActiveWindow {
-                    app: "vscode".into(),
-                    title: "track-your-day".into(),
-                },
+                kind: ActivityKind::TypingSpeed { wpm }
             };
 
-            self.store.save(event.clone()).await?;
+            self.store.save(eventwpm.clone()).await?;
+            let _ = self.notify.send(eventwpm);
+
+            let eventwindow = match get_active_window(){
+                Ok(window) => ActivityEvent { timestamp: Utc::now(), 
+                    kind: ActivityKind::ActiveWindow { app: window.process_name, title: window.title } 
+                },
+                    
+                Err(_) => {
+                    eprintln!("[watcher-mutator] gagal baca active window");
+                    ActivityEvent { timestamp: Utc::now(), kind: ActivityKind::ActiveWindow { app: "unknown".into(), title: "unknown".into() } }
+                }
+            };
+            self.store.save(eventwindow.clone()).await?;
+
             // Broadcast tidak wajib berhasil (mungkin belum ada subscriber).
-            let _ = self.notify.send(event);
+            let _ = self.notify.send(eventwindow);
         }
     }
 }

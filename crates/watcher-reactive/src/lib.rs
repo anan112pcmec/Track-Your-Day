@@ -16,12 +16,16 @@ use tokio::sync::broadcast;
 /// Reactor contoh paling sederhana: cuma nge-print ke stdout.
 /// Ganti/implement `ActivityReactor` lain (mis. desktop notification)
 /// tanpa menyentuh `ReactiveWatcher`.
-pub struct LoggingReactor;
+pub struct LoggingReactor{
+     pub verbose: bool,
+}
 
 #[async_trait]
 impl ActivityReactor for LoggingReactor {
     async fn on_event(&self, event: &ActivityEvent) {
-        println!("[reactive] event baru terdeteksi: {:?}", event.kind);
+        if self.verbose {
+            println!("[reactive] event baru terdeteksi: {:?}", event.kind);
+        }
     }
 }
 
