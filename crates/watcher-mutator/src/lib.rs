@@ -14,6 +14,8 @@
 use chrono::Utc;
 use rdev::{listen, EventType};
 use separation::{ActivityEvent, ActivityKind, ActivityStore};
+use sysinfo::{Process, System};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -52,11 +54,13 @@ impl KeyCounter {
     }
 }
 
+
 pub struct MutatorWatcher {
     store: Arc<dyn ActivityStore>,
     notify: broadcast::Sender<ActivityEvent>,
     interval: Duration,
     key_counter: KeyCounter,
+    process_window: usize,
 }
 
 impl MutatorWatcher {
@@ -65,8 +69,9 @@ impl MutatorWatcher {
         notify: broadcast::Sender<ActivityEvent>,
         interval: Duration,
         key_counter: KeyCounter,
+        process_window: usize,
     ) -> Self {
-        Self { store, notify, interval, key_counter }
+        Self { store, notify, interval, key_counter, process_window }
     }
 
     /// Jalankan loop watcher. Dipanggil sebagai tokio task terpisah dari `cli`.
@@ -75,37 +80,54 @@ impl MutatorWatcher {
         loop {
             tick.tick().await;
 
-            let keystrokes = self.key_counter.take_and_reset();
-            let elapsed_minutes = self.interval.as_secs_f64() / 60.0;
-            let wpm = ((keystrokes as f64 / 5.0) / elapsed_minutes).round() as u32;
+           {
+                let keystrokes = self.key_counter.take_and_reset();
+                let elapsed_minutes = self.interval.as_secs_f64() / 60.0;
+                let wpm = ((keystrokes as f64 / 5.0) / elapsed_minutes).round() as u32;
 
-            // TODO: ganti placeholder ini dengan capture asli:
-            // - active window (app + title)
-            // - hitung WPM dari event keyboard
-            // - deteksi idle
+                // TODO: ganti placeholder ini dengan capture asli:
+                // - active window (app + title)
+                // - hitung WPM dari event keyboard
+                // - deteksi idle
 
-            let eventwpm = ActivityEvent {
-                timestamp: Utc::now(),
-                kind: ActivityKind::TypingSpeed { wpm }
-            };
+                let eventwpm = ActivityEvent {
+                    timestamp: Utc::now(),
+                    kind: ActivityKind::TypingSpeed { wpm }
+                };
 
-            self.store.save(eventwpm.clone()).await?;
-            let _ = self.notify.send(eventwpm);
+                self.store.save(eventwpm.clone()).await?;
+                let _ = self.notify.send(eventwpm);
+           }
 
-            let eventwindow = match get_active_window(){
-                Ok(window) => ActivityEvent { timestamp: Utc::now(), 
-                    kind: ActivityKind::ActiveWindow { app: window.process_name, title: window.title } 
-                },
-                    
-                Err(_) => {
-                    eprintln!("[watcher-mutator] gagal baca active window");
-                    ActivityEvent { timestamp: Utc::now(), kind: ActivityKind::ActiveWindow { app: "unknown".into(), title: "unknown".into() } }
-                }
-            };
-            self.store.save(eventwindow.clone()).await?;
+            {
+                let eventwindow = match get_active_window(){
+                    Ok(window) => ActivityEvent { timestamp: Utc::now(), 
+                        kind: ActivityKind::ActiveWindow { app: window.process_name, title: window.title } 
+                    },
+                        
+                    Err(_) => {
+                        eprintln!("[watcher-mutator] gagal baca active window");
+                        ActivityEvent { timestamp: Utc::now(), kind: ActivityKind::ActiveWindow { app: "unknown".into(), title: "unknown".into() } }
+                    }
+                };
+                self.store.save(eventwindow.clone()).await?;
 
-            // Broadcast tidak wajib berhasil (mungkin belum ada subscriber).
-            let _ = self.notify.send(eventwindow);
+                // Broadcast tidak wajib berhasil (mungkin belum ada subscriber).
+                let _ = self.notify.send(eventwindow);
+            }
+
+            {
+                fn total_process_count() -> usize {
+                    let mut sys = sysinfo::System::new_all();
+                    sys.refresh_all();
+                    sys.processes().len()
+                };
+                let eventwindow: separation::ActivityEvent = separation::ActivityEvent{
+                    timestamp: Utc::now(),
+                    kind: separation::ActivityKind::TotalProcess { process:  total_process_count() }
+                };
+                self.store.save(eventwindow.clone()).await?;
+            }
         }
     }
 }

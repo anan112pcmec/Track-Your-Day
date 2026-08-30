@@ -3,6 +3,7 @@
 use anyhow::Result;
 use database::MemoryStore;
 use separation::ActivityStore;
+use std::collections::VecDeque;
 use std::io::stdout;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,7 +11,6 @@ use tokio::sync::broadcast;
 use watcher_mutator::MutatorWatcher;
 use watcher_reactive::{LoggingReactor, ReactiveWatcher};
 
-// --- IMPORT RATATUI & CROSSTERM ---
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -18,7 +18,7 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Paragraph, Sparkline, Wrap},
 };
 
 /// Guard RAII untuk memastikan state terminal selalu dikembalikan ke normal saat exit / panic
@@ -39,6 +39,20 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// Ambil isi VecDeque jadi Vec biasa buat dikasih ke Sparkline.
+/// HARUS di-`let` ke variabel dulu sebelum dipakai widget — kalau
+/// dipanggil inline di tengah argumen, hasilnya adalah temporary yang
+/// mati duluan sebelum sempat dipakai (borrow checker bakal nolak).
+fn wpm_data_slice(history: &VecDeque<u64>) -> Vec<u64> {
+    history.iter().copied().collect()
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum ActiveTab {
+    Activity,
+    Performance,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // 1) DATABASE — MemoryStore dipegang via ActivityStore trait
@@ -48,11 +62,17 @@ async fn main() -> Result<()> {
     let (tx, rx) = broadcast::channel(64);
 
     // 3) WATCHER-MUTATOR — spawn background task (menulis data tiap 2 detik)
-    let mutator = MutatorWatcher::new(store.clone(), tx.clone(), Duration::from_secs(2),  watcher_mutator::KeyCounter::start());
+    let mutator = MutatorWatcher::new(
+        store.clone(),
+        tx.clone(),
+        Duration::from_secs(2),
+        watcher_mutator::KeyCounter::start(),
+        0
+    );
     let mutator_handle = tokio::spawn(mutator.run());
 
     // 4) WATCHER-REACTIVE — spawn background task
-    let reactive = ReactiveWatcher::new(rx, Box::new(LoggingReactor {verbose: false}));
+    let reactive = ReactiveWatcher::new(rx, Box::new(LoggingReactor { verbose: false }));
     let reactive_handle = tokio::spawn(reactive.run());
 
     // 5) API STATE
@@ -66,142 +86,166 @@ async fn main() -> Result<()> {
     let start_time = Instant::now();
     let mut render_interval = tokio::time::interval(Duration::from_millis(100));
 
+    let mut active_tab = ActiveTab::Activity;
+
+    const HISTORY_LEN: usize = 40;
+    let mut wpm_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut process_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut uptime_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut window_history: VecDeque<String> = VecDeque::with_capacity(5);
+
     // 7) MAIN TUI LOOP
     loop {
-        // Redraw UI setiap interval tick
         render_interval.tick().await;
 
-        // Ambil data live dari api_state
-        let event_count = api_state.health_check().await.unwrap_or(0);
-        let wpm_score: u32 = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
-        let running_app: String = api_state.running_application_check().await.ok().flatten().unwrap_or(String::from("None"));
         let uptime_secs = start_time.elapsed().as_secs();
+        let wpm_score: u32 = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
+        let running_app: String = api_state
+            .running_application_check()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(String::from("None"));
+        let current_process: usize = api_state
+            .running_process_check()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(0);
 
-        // Render Frame Ratatui
+        if wpm_history.len() == HISTORY_LEN {
+            wpm_history.pop_front();
+        }
+        wpm_history.push_back(wpm_score as u64);
+
+        if process_history.len() == HISTORY_LEN {
+            process_history.pop_front();
+        }
+        process_history.push_back(current_process as u64);
+
+        if uptime_history.len() == HISTORY_LEN {
+            uptime_history.pop_front();
+        }
+        uptime_history.push_back(uptime_secs);
+
+        if window_history.back() != Some(&running_app) {
+            if window_history.len() == 5 {
+                window_history.pop_front();
+            }
+            window_history.push_back(running_app.clone());
+        }
+
         terminal.draw(|f| {
-            // Layout Utama (Vertical): Header Nav (10%), First Section / Upper Body (50%), Second Section / Lower Body (40%)
-            let outer_layer = Layout::default()
+            let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints([
-                    Constraint::Percentage(10), // Navigasi Header
-                    Constraint::Percentage(50), // Konten Atas (Kotak 1 & 2)
-                    Constraint::Percentage(40), // Konten Bawah (Kotak 3 & 4)
-                ])
+                .constraints([Constraint::Length(3), Constraint::Min(0)])
                 .split(f.area());
 
-            // First Section (Horizontal 30% : 70%) - Dibagi dari outer_layer[1]
-            let first_section = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(30),
-                    Constraint::Percentage(70),
-                ])
-                .split(outer_layer[1]);
-
-            // Second Section (Horizontal 50% : 50%) - Dibagi dari outer_layer[2]
-            let second_section = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(50),
-                    Constraint::Percentage(50),
-                ])
-                .split(outer_layer[2]);
-
-            // Styling dasar border
-            let block_style = Block::bordered();
-
-            // ---------------- HEADER / NAV (10%) ----------------
-            let header_nav = Paragraph::new(
-                Line::from(vec![
-                    Span::styled(" TRACK YOUR DAY ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::raw(" | "),
-                    Span::styled(" [Home] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(" [Dashboard] ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(" [Settings] ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(" [Press 'q' to Exit] ", Style::default().fg(Color::Red)),
-                ])
-            )
-            .block(block_style.clone().title(" Navigation "));
-            f.render_widget(header_nav, outer_layer[0]);
-
-            // ---------------- KOTAK 1 (Kiri Atas - 30%): Live Metrics ----------------
-            let stats_text = vec![
-                Line::from(vec![
-                    Span::raw("Mutator Task : "),
-                    Span::styled("RUNNING (2s)", Style::default().fg(Color::Green)),
-                ]),
-                Line::from(vec![
-                    Span::raw("Reactive Task: "),
-                    Span::styled("ACTIVE", Style::default().fg(Color::Green)),
-                ]),
-                Line::from(vec![
-                    Span::raw("Events Read  : "),
+            // ---------------- TAB BAR ----------------
+            let tab_label = |label: &str, is_active: bool| -> Span {
+                if is_active {
                     Span::styled(
-                        format!("{} rec", event_count),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("Uptime       : "),
-                    Span::styled(format!("{}s", uptime_secs), Style::default().fg(Color::Blue)),
-                ]),
-            ];
-            let p1 = Paragraph::new(stats_text)
-                .block(block_style.clone().title(" Live Metrics "));
-            f.render_widget(p1, first_section[0]);
+                        format!(" {label} "),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray))
+                }
+            };
+            let tabs = Paragraph::new(Line::from(vec![
+                Span::styled(
+                    " track your day ",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" │ "),
+                tab_label("Your Activity", active_tab == ActiveTab::Activity),
+                tab_label("Performance", active_tab == ActiveTab::Performance),
+                Span::raw(" │ "),
+                Span::styled("[Tab] switch   [q] exit", Style::default().fg(Color::DarkGray)),
+            ]))
+            .block(Block::bordered());
+            f.render_widget(tabs, layout[0]);
 
-            // ---------------- KOTAK 2 (Kanan Atas - 70%): Activity Overview ----------------
-            let overview_text = vec![
-                Line::from(Span::styled("Your Live Activity Performance", Style::default().add_modifier(Modifier::UNDERLINED))),
-                Line::from(vec![
-                    Span::raw("Typing Speed (WPM)  : "),
-                    Span::styled(
-                        format!("{} character", wpm_score), 
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("Active Window       : "),
-                    Span::styled(
-                        format!("{}", running_app), 
-                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-            ];
-            let p2 = Paragraph::new(overview_text)
-                .wrap(Wrap { trim: true })
-                .block(block_style.clone().title(" Activity Overview "));
-            f.render_widget(p2, first_section[1]);
+            match active_tab {
+                ActiveTab::Activity => {
+                    let rows = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Length(3); 4])
+                        .split(layout[1]);
 
-            // ---------------- KOTAK 3 (Kiri Bawah - 50%): System Logs / Status ----------------
-            let p3 = Paragraph::new(vec![
-                Line::from(Span::styled("System Status: Optimal", Style::default().fg(Color::Green))),
-                Line::from(format!("Uptime total: {} seconds elapsed.", uptime_secs)),
-                Line::from(Span::styled("Worker threads operational.", Style::default().fg(Color::DarkGray))),
-            ])
-            .wrap(Wrap { trim: true })
-            .block(block_style.clone().title(" System Health "));
-            f.render_widget(p3, second_section[0]);
+                    // Vec-nya di-`let` dulu supaya tetap hidup selagi dipakai sparkline.
+                    let wpm_data = wpm_data_slice(&wpm_history);
+                    let process_data = wpm_data_slice(&process_history);
 
-            // ---------------- KOTAK 4 (Kanan Bawah - 50%): Quick Help / Shortcuts ----------------
-            let p4 = Paragraph::new(vec![
-                Line::from(Span::styled("Keyboard Shortcuts:", Style::default().add_modifier(Modifier::BOLD))),
-                Line::from(" • [q] : Keluar dari aplikasi"),
-                Line::from(" • [Ctrl+C] : Force stop proses"),
-            ])
-            .wrap(Wrap { trim: true })
-            .block(block_style.clone().title(" Information "));
-            f.render_widget(p4, second_section[1]);
+                    let metric_row = |label: &str, value: String, color: Color, area: Rect| -> (Paragraph, std::rc::Rc<[Rect]>) {
+                        let cols = Layout::default()
+                            .direction(Direction::Horizontal)
+                            .constraints([Constraint::Length(28), Constraint::Min(0)])
+                            .split(area);
+                        let text = Paragraph::new(Line::from(vec![
+                            Span::styled(format!("{label:<16}"), Style::default().fg(Color::DarkGray)),
+                            Span::styled(value, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                        ]));
+                        (text, cols)
+                    };
+
+                    let (text, cols) = metric_row("Typing Speed", format!("{wpm_score} WPM"), Color::Cyan, rows[0]);
+                    f.render_widget(text, cols[0]);
+                    f.render_widget(
+                        Sparkline::default().data(&wpm_data).style(Style::default().fg(Color::Cyan)),
+                        cols[1],
+                    );
+
+                    let (text, _) = metric_row("Active Window", running_app.clone(), Color::Magenta, rows[1]);
+                    f.render_widget(text, rows[1]);
+
+                    let (text, cols) = metric_row("Processes", format!("{current_process}"), Color::Yellow, rows[2]);
+                    f.render_widget(text, cols[0]);
+                    f.render_widget(
+                        Sparkline::default().data(&process_data).style(Style::default().fg(Color::Yellow)),
+                        cols[1],
+                    );
+
+                    let (text, _) = metric_row("Uptime", format!("{uptime_secs}s"), Color::Blue, rows[3]);
+                    f.render_widget(text, rows[3]);
+                }
+                ActiveTab::Performance => {
+                    let rows = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Percentage(25); 4])
+                        .split(layout[1]);
+
+                    let placeholder = |title: &str| {
+                        Paragraph::new(Span::styled(
+                            "belum diisi — nyusul besok",
+                            Style::default().fg(Color::DarkGray),
+                        ))
+                        .block(Block::bordered().title(format!(" {title} ")))
+                    };
+                    f.render_widget(placeholder("CPU"), rows[0]);
+                    f.render_widget(placeholder("Memory"), rows[1]);
+                    f.render_widget(placeholder("Disk"), rows[2]);
+                    f.render_widget(placeholder("WiFi / Network"), rows[3]);
+                }
+            }
         })?;
 
-        // Handle Input Keyboard (Non-blocking poll)
         if event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Char('q')
-                    || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
-                {
-                    break;
+                match key.code {
+                    KeyCode::Char('q') => break,
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                    KeyCode::Tab => {
+                        active_tab = match active_tab {
+                            ActiveTab::Activity => ActiveTab::Performance,
+                            ActiveTab::Performance => ActiveTab::Activity,
+                        };
+                    }
+                    _ => {}
                 }
             }
         }

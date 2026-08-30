@@ -11,3 +11,4 @@ chrono      = { workspace = true }
 
 rdev="0.5"
 active-win-pos-rs = "0.7"
+sysinfo = "0.39.6"

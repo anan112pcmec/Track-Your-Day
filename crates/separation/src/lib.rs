@@ -27,15 +27,7 @@ pub struct ActivityEvent {
 pub enum ActivityKind {
     ActiveWindow { app: String, title: String },
     TypingSpeed { wpm: u32 },
-    WindowId {id: usize},
-    ProcessId {id: usize},
-    Idle { seconds: u32 },
-    Position {
-        x: f32,
-        y: f32,
-        width: f32,
-        height:f32,
-    }
+    TotalProcess { process: usize}
 }
 
 /// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.

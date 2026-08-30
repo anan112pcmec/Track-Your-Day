@@ -36,18 +36,22 @@ impl ApiState {
     pub async fn running_application_check(&self) -> anyhow::Result<Option<String>> {
         let events: Vec<ActivityEvent> = self.store.recent(200).await?;
         let running_application: Option<String> = events.iter().rev().find_map(|event | match &event.kind {
-            ActivityKind::ActiveWindow { app, title } => Some(app.clone()),
+            ActivityKind::ActiveWindow { app, .. } => Some(app.clone()),
             _ => None,
         });
         Ok(running_application)
     }
 
-    pub async fn window_id_check(&self) -> anyhow::Result<Option<usize>> {
+    pub async fn running_process_check(&self) -> anyhow::Result<Option<usize>> {
         let events: Vec<ActivityEvent> = self.store.recent(200).await?;
-        let window_id: Option<usize> = events.iter().rev().find_map(|event | match event.kind {
-            ActivityKind::WindowId {id} => Some(id),
+        let running_process: Option<usize> = events.iter().rev().find_map(|event | match event.kind {
+            ActivityKind::TotalProcess { process } => Some(process),
             _ => None,
         });
-        return Ok(window_id)
+        Ok(running_process)
     }
+
+   
+
+
 }
