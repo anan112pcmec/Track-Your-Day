@@ -79,90 +79,120 @@ async fn main() -> Result<()> {
 
         // Render Frame Ratatui
         terminal.draw(|f| {
-            // Layout Utama (Vertical): Header, Body, Footer
-            let chunks = Layout::default()
+            // Layout Utama (Vertical): Header Nav (10%), First Section / Upper Body (50%), Second Section / Lower Body (40%)
+            let outer_layer = Layout::default()
                 .direction(Direction::Vertical)
+                .margin(1)
                 .constraints([
-                    Constraint::Length(3), // Header
-                    Constraint::Min(6),    // Main Content
-                    Constraint::Length(3), // Footer
+                    Constraint::Percentage(10), // Navigasi Header
+                    Constraint::Percentage(50), // Konten Atas (Kotak 1 & 2)
+                    Constraint::Percentage(40), // Konten Bawah (Kotak 3 & 4)
                 ])
                 .split(f.area());
 
-            // ---------------- HEADER ----------------
-            let header = Paragraph::new(" TRACK YOUR DAY —")
-                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-                .block(Block::default().borders(Borders::ALL).title(" App "));
-            f.render_widget(header, chunks[0]);
-
-            // ---------------- MAIN BODY (Horizontal Split) ----------------
-            let body_chunks = Layout::default()
+            // First Section (Horizontal 30% : 70%) - Dibagi dari outer_layer[1]
+            let first_section = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(50), // Kolom Kiri: Statistics
-                    Constraint::Percentage(50), // Kolom Kanan: System Overview
+                    Constraint::Percentage(30),
+                    Constraint::Percentage(70),
                 ])
-                .split(chunks[1]);
+                .split(outer_layer[1]);
 
-            // Panel Kiri: Real-time Stats
+            // Second Section (Horizontal 50% : 50%) - Dibagi dari outer_layer[2]
+            let second_section = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(outer_layer[2]);
+
+            // Styling dasar border
+            let block_style = Block::bordered();
+
+            // ---------------- HEADER / NAV (10%) ----------------
+            let header_nav = Paragraph::new(
+                Line::from(vec![
+                    Span::styled(" TRACK YOUR DAY ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::raw(" | "),
+                    Span::styled(" [Home] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(" [Dashboard] ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" [Settings] ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" [Press 'q' to Exit] ", Style::default().fg(Color::Red)),
+                ])
+            )
+            .block(block_style.clone().title(" Navigation "));
+            f.render_widget(header_nav, outer_layer[0]);
+
+            // ---------------- KOTAK 1 (Kiri Atas - 30%): Live Metrics ----------------
             let stats_text = vec![
                 Line::from(vec![
-                    Span::raw("Mutator Task   : "),
-                    Span::styled("RUNNING (Interval 2s)", Style::default().fg(Color::Green)),
+                    Span::raw("Mutator Task : "),
+                    Span::styled("RUNNING (2s)", Style::default().fg(Color::Green)),
                 ]),
                 Line::from(vec![
-                    Span::raw("Reactive Task  : "),
+                    Span::raw("Reactive Task: "),
                     Span::styled("ACTIVE", Style::default().fg(Color::Green)),
                 ]),
                 Line::from(vec![
-                    Span::raw("Events Read    : "),
+                    Span::raw("Events Read  : "),
                     Span::styled(
-                        format!("{} records", event_count),
+                        format!("{} rec", event_count),
                         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::raw("Uptime         : "),
-                    Span::styled(format!("{} detik", uptime_secs), Style::default().fg(Color::Blue)),
+                    Span::raw("Uptime       : "),
+                    Span::styled(format!("{}s", uptime_secs), Style::default().fg(Color::Blue)),
                 ]),
             ];
-            let stats_panel = Paragraph::new(stats_text)
-                .block(Block::default().borders(Borders::ALL).title(" Live Metrics "));
-            f.render_widget(stats_panel, body_chunks[0]);
+            let p1 = Paragraph::new(stats_text)
+                .block(block_style.clone().title(" Live Metrics "));
+            f.render_widget(p1, first_section[0]);
 
-            // Panel Kanan: Architecture 
+            // ---------------- KOTAK 2 (Kanan Atas - 70%): Activity Overview ----------------
             let overview_text = vec![
-                Line::from(Span::styled("Your Activity", Style::default().add_modifier(Modifier::UNDERLINED))),
+                Line::from(Span::styled("Your Live Activity Performance", Style::default().add_modifier(Modifier::UNDERLINED))),
                 Line::from(vec![
-                    Span::raw("WPM : "),
+                    Span::raw("Typing Speed (WPM)  : "),
                     Span::styled(
                         format!("{} character", wpm_score), 
-                        Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::raw("Running Application : "),
+                    Span::raw("Active Window       : "),
                     Span::styled(
-                        format!("{} Recently", running_app), 
-                        Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                        format!("{}", running_app), 
+                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
                     ),
-                ]),
-                Line::from(vec![
-                    Span::raw("Running Thread : "),
-                    Span::styled(
-                        format!("{} thread", ), style)
                 ]),
             ];
-            let overview_panel = Paragraph::new(overview_text)
+            let p2 = Paragraph::new(overview_text)
                 .wrap(Wrap { trim: true })
-                .block(Block::default().borders(Borders::ALL).title(" Your Activity "));
-            f.render_widget(overview_panel, body_chunks[1]);
+                .block(block_style.clone().title(" Activity Overview "));
+            f.render_widget(p2, first_section[1]);
 
-            // ---------------- FOOTER ----------------
-            let footer = Paragraph::new(" Tekan 'q' atau Ctrl+C untuk keluar dari aplikasi")
-                .style(Style::default().fg(Color::DarkGray))
-                .block(Block::default().borders(Borders::ALL));
-            f.render_widget(footer, chunks[2]);
+            // ---------------- KOTAK 3 (Kiri Bawah - 50%): System Logs / Status ----------------
+            let p3 = Paragraph::new(vec![
+                Line::from(Span::styled("System Status: Optimal", Style::default().fg(Color::Green))),
+                Line::from(format!("Uptime total: {} seconds elapsed.", uptime_secs)),
+                Line::from(Span::styled("Worker threads operational.", Style::default().fg(Color::DarkGray))),
+            ])
+            .wrap(Wrap { trim: true })
+            .block(block_style.clone().title(" System Health "));
+            f.render_widget(p3, second_section[0]);
+
+            // ---------------- KOTAK 4 (Kanan Bawah - 50%): Quick Help / Shortcuts ----------------
+            let p4 = Paragraph::new(vec![
+                Line::from(Span::styled("Keyboard Shortcuts:", Style::default().add_modifier(Modifier::BOLD))),
+                Line::from(" • [q] : Keluar dari aplikasi"),
+                Line::from(" • [Ctrl+C] : Force stop proses"),
+            ])
+            .wrap(Wrap { trim: true })
+            .block(block_style.clone().title(" Information "));
+            f.render_widget(p4, second_section[1]);
         })?;
 
         // Handle Input Keyboard (Non-blocking poll)
