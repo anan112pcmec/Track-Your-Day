@@ -6,7 +6,7 @@
 //! crate `database`. Supaya storage tetap bisa diganti tanpa merusak API.
 
 use anyhow::Ok;
-use separation::{ActivityKind, ActivityStore, ActivityEvent};
+use separation::{ActivityEvent, ActivityKind, ActivityStore, CpuSnapshot};
 use std::sync::Arc;
 
 /// Placeholder state. Nanti bisa jadi Router state (axum), dsb.
@@ -50,6 +50,15 @@ impl ApiState {
         });
         Ok(running_process)
     }
+
+    pub async fn cpu_util_check(&self) -> anyhow::Result<Option<CpuSnapshot>> {
+    let events: Vec<ActivityEvent> = self.store.recent(200).await?;
+    let latest_cpu: Option<CpuSnapshot> = events.iter().rev().find_map(|event| match &event.kind {
+        ActivityKind::Cpu(snapshot) => Some(snapshot.clone()),
+        _ => None,
+    });
+    Ok(latest_cpu)
+}
 
    
 

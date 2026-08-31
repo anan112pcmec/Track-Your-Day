@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 use database::MemoryStore;
-use separation::ActivityStore;
+use separation::{ActivityStore, CpuSnapshot};
 use std::collections::VecDeque;
 use std::io::stdout;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use watcher_mutator::MutatorWatcher;
+use watcher_mutator::{CpuUtilData, MutatorWatcher};
 use watcher_reactive::{LoggingReactor, ReactiveWatcher};
 
 use crossterm::{
@@ -18,8 +18,10 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Paragraph, Sparkline, Wrap},
+    widgets::{Block, Gauge, Paragraph, Sparkline, Wrap},
 };
+use ratatui::symbols::Marker;
+use ratatui::widgets::{Axis,  Chart, Dataset, GraphType};
 
 /// Guard RAII untuk memastikan state terminal selalu dikembalikan ke normal saat exit / panic
 struct TerminalGuard;
@@ -67,7 +69,8 @@ async fn main() -> Result<()> {
         tx.clone(),
         Duration::from_secs(2),
         watcher_mutator::KeyCounter::start(),
-        0
+        0,
+        CpuUtilData::new(),
     );
     let mutator_handle = tokio::spawn(mutator.run());
 
@@ -93,6 +96,7 @@ async fn main() -> Result<()> {
     let mut process_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut uptime_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut window_history: VecDeque<String> = VecDeque::with_capacity(5);
+    let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
     // 7) MAIN TUI LOOP
     loop {
@@ -112,6 +116,8 @@ async fn main() -> Result<()> {
             .ok()
             .flatten()
             .unwrap_or(0);
+        // Ambil snapshot CPU terbaru dari database lewat api_state.
+        let cpu_snapshot: Option<CpuSnapshot> = api_state.cpu_util_check().await.ok().flatten();
 
         if wpm_history.len() == HISTORY_LEN {
             wpm_history.pop_front();
@@ -134,6 +140,17 @@ async fn main() -> Result<()> {
             }
             window_history.push_back(running_app.clone());
         }
+
+        // History buat sparkline CPU usage.
+        if cpu_history.len() == HISTORY_LEN {
+            cpu_history.pop_front();
+        }
+        cpu_history.push_back(
+            cpu_snapshot
+                .as_ref()
+                .map(|s| s.soft_utilization.round() as u64)
+                .unwrap_or(0),
+        );
 
         terminal.draw(|f| {
             let layout = Layout::default()
@@ -214,23 +231,105 @@ async fn main() -> Result<()> {
                     f.render_widget(text, rows[3]);
                 }
                 ActiveTab::Performance => {
-                    let rows = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(25); 4])
-                        .split(layout[1]);
+    let sections = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .split(layout[1]);
 
-                    let placeholder = |title: &str| {
-                        Paragraph::new(Span::styled(
-                            "belum diisi — nyusul besok",
-                            Style::default().fg(Color::DarkGray),
-                        ))
-                        .block(Block::bordered().title(format!(" {title} ")))
-                    };
-                    f.render_widget(placeholder("CPU"), rows[0]);
-                    f.render_widget(placeholder("Memory"), rows[1]);
-                    f.render_widget(placeholder("Disk"), rows[2]);
-                    f.render_widget(placeholder("WiFi / Network"), rows[3]);
-                }
+    // ---------------- KIRI (30%): daftar util yang bisa dipilih ----------------
+    let menu_items = vec![
+        Line::from(Span::styled(
+            " ▶ CPU        ",
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled("   Memory     ", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled("   Disk       ", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled("   WiFi       ", Style::default().fg(Color::DarkGray))),
+    ];
+    let menu = Paragraph::new(menu_items).block(Block::bordered().title(" Utilities "));
+    f.render_widget(menu, sections[0]);
+
+    // ---------------- KANAN (70%): detail CPU ----------------
+    let detail_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Gauge % pemakaian saat ini
+            Constraint::Min(10),    // Chart history (butuh ruang lebih buat sumbu)
+            Constraint::Min(0),     // Angka-angka detail
+        ])
+        .split(sections[1]);
+
+    let usage_percent = cpu_snapshot.as_ref().map(|s| s.soft_utilization).unwrap_or(0.0);
+    let usage_gauge = Gauge::default()
+        .block(Block::bordered().title(" CPU Usage "))
+        .gauge_style(Style::default().fg(Color::Cyan))
+        .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
+        .label(format!("{usage_percent:.1}%"));
+    f.render_widget(usage_gauge, detail_rows[0]);
+
+    // Data-nya harus di-`let` dulu (bukan dipanggil inline di Dataset::data())
+    // biar gak mati sebelum sempat dipakai Chart — sama kayak kasus
+    // Sparkline yang pernah kena masalah ini juga.
+    let cpu_points: Vec<(f64, f64)> = cpu_history
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (i as f64, *v as f64))
+        .collect();
+
+    let cpu_dataset = Dataset::default()
+        .name("CPU %")
+        .marker(Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Cyan))
+        .data(&cpu_points);
+
+    let x_axis = Axis::default()
+        .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+        .bounds([0.0, HISTORY_LEN as f64])
+        .labels(["awal", "sekarang"]);
+
+    let y_axis = Axis::default()
+        .title(Span::styled("Persen", Style::default().fg(Color::DarkGray)))
+        .bounds([0.0, 100.0])
+        .labels(["0", "50", "100"]);
+
+    let cpu_chart = Chart::new(vec![cpu_dataset])
+        .block(Block::bordered().title(" History "))
+        .x_axis(x_axis)
+        .y_axis(y_axis);
+    f.render_widget(cpu_chart, detail_rows[1]);
+
+    let detail_text: Vec<Line> = if let Some(snapshot) = &cpu_snapshot {
+        vec![
+            Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+            Line::from(format!("Processes        : {}", snapshot.soft_processes)),
+            Line::from(format!("Threads          : {}", snapshot.soft_threads)),
+            Line::from(format!("Handles          : {}", snapshot.soft_handles)),
+            Line::from(format!("Speed sekarang   : {:.0} MHz", snapshot.soft_speed_clock)),
+            Line::from(format!("Uptime           : {}", snapshot.soft_uptime)),
+            Line::from(""),
+            Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
+            Line::from(format!("Base speed       : {:.0} MHz", snapshot.hard_base_speed)),
+            Line::from(format!("Sockets          : {}", snapshot.hard_sockets)),
+            Line::from(format!("Cores            : {}", snapshot.hard_cores)),
+            Line::from(format!("Logical procs    : {}", snapshot.hard_logical_processors)),
+            Line::from(format!(
+                "Virtualization   : {}",
+                if snapshot.hard_virtualization { "Enabled" } else { "Disabled" }
+            )),
+            Line::from(format!("L1 cache         : {:.0} KB", snapshot.hard_l1_cache)),
+            Line::from(format!("L2 cache         : {:.0} KB", snapshot.hard_l2_cache)),
+            Line::from(format!("L3 cache         : {:.0} KB", snapshot.hard_l3_cache)),
+        ]
+    } else {
+        vec![Line::from(Span::styled(
+            "Menunggu data CPU pertama...",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    };
+    let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+    f.render_widget(detail_panel, detail_rows[2]);
+}
             }
         })?;
 

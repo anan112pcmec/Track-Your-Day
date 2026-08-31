@@ -1,14 +1,3 @@
-//! `separation` — lapisan domain / "batas pemisah" antar crate.
-//!
-//! Crate ini SENGAJA tidak boleh depend ke `database`, `watcher-mutator`,
-//! `watcher-reactive`, atau `api`. Isinya cuma tipe data + trait (kontrak).
-//! Efeknya: crate lain saling tidak kenal satu sama lain, mereka cuma kenal
-//! trait di sini. `cli` yang nanti "menikahkan" implementasi konkretnya.
-//!
-//! Kalau besok mau ganti storage dari in-memory ke SQLite, atau ganti
-//! reactor dari println ke notifikasi desktop, cukup ganti implementasi —
-//! trait & tipe di file ini tidak perlu berubah.
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,6 +9,31 @@ pub struct ActivityEvent {
     pub kind: ActivityKind,
 }
 
+/// Snapshot data CPU dalam satu waktu. Dipisah jadi struct sendiri
+/// (bukan field langsung di `ActivityKind::Cpu`) biar gak numpuk 13 field
+/// mentah di satu variant enum, dan gampang dipakai ulang di tempat lain
+/// (mis. buat panel "Performance" di TUI) tanpa harus destructure enum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpuSnapshot {
+    // ---------- hardware (statis) ----------
+    pub hard_base_speed: f32,
+    pub hard_sockets: u8,
+    pub hard_cores: u16,
+    pub hard_logical_processors: u8,
+    pub hard_virtualization: bool,
+    pub hard_l1_cache: f32,
+    pub hard_l2_cache: f32,
+    pub hard_l3_cache: f32,
+
+    // ---------- software (live) ----------
+    pub soft_utilization: f32,
+    pub soft_speed_clock: f32,
+    pub soft_processes: u32,
+    pub soft_threads: u32,
+    pub soft_handles: u64,
+    pub soft_uptime: String,
+}
+
 /// Jenis data mentah yang mau kamu rekam untuk "track your day".
 /// Tinggal tambah varian di sini kalau mau nambah sinyal baru
 /// (mis. AppSwitch, ClipboardActivity, dst).
@@ -27,7 +41,8 @@ pub struct ActivityEvent {
 pub enum ActivityKind {
     ActiveWindow { app: String, title: String },
     TypingSpeed { wpm: u32 },
-    TotalProcess { process: usize}
+    TotalProcess { process: usize },
+    Cpu(CpuSnapshot),
 }
 
 /// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.

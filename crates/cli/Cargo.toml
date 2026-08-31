@@ -18,3 +18,4 @@ anyhow           = { workspace = true }
 
 ratatui   = "0.30.2"
 crossterm = "0.29.0"
+color-eyre = ""
