@@ -52,13 +52,23 @@ impl ApiState {
     }
 
     pub async fn cpu_util_check(&self) -> anyhow::Result<Option<CpuSnapshot>> {
-    let events: Vec<ActivityEvent> = self.store.recent(200).await?;
-    let latest_cpu: Option<CpuSnapshot> = events.iter().rev().find_map(|event| match &event.kind {
-        ActivityKind::Cpu(snapshot) => Some(snapshot.clone()),
-        _ => None,
-    });
-    Ok(latest_cpu)
-}
+        let events: Vec<ActivityEvent> = self.store.recent(200).await?;
+        let latest_cpu: Option<CpuSnapshot> = events.iter().rev().find_map(|event| match &event.kind {
+            ActivityKind::Cpu(snapshot) => Some(snapshot.clone()),
+            _ => None,
+        });
+        Ok(latest_cpu)
+        
+    }
+
+    pub async fn ram_util_check(&self) -> anyhow::Result<Option<separation::RamSnapshot>> {
+        let events: Vec<separation::ActivityEvent> = self.store.recent(200).await?;
+        let latest_ram = events.iter().rev().find_map(|event| match &event.kind {
+            separation::ActivityKind::Ram(snapshot) => Some(snapshot.clone()),
+            _ => None,
+        });
+        Ok(latest_ram)
+    }
 
    
 

@@ -34,6 +34,22 @@ pub struct CpuSnapshot {
     pub soft_uptime: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RamSnapshot {
+    pub hard_capacity: f32,
+    pub hard_speed: u32,
+    pub hard_slots_used: u16,
+    pub hard_form_factor: String,
+    pub soft_hardware_reserve: f32,
+    pub soft_in_use: f32,
+    pub soft_available: f32,
+    pub soft_in_commited: f32,
+    pub soft_available_commited: f32,
+    pub soft_cached: f32,
+    pub soft_page_pool: f32,
+    pub soft_non_paged_pool: f32,
+}
+
 /// Jenis data mentah yang mau kamu rekam untuk "track your day".
 /// Tinggal tambah varian di sini kalau mau nambah sinyal baru
 /// (mis. AppSwitch, ClipboardActivity, dst).
@@ -43,6 +59,7 @@ pub enum ActivityKind {
     TypingSpeed { wpm: u32 },
     TotalProcess { process: usize },
     Cpu(CpuSnapshot),
+    Ram(RamSnapshot),
 }
 
 /// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.

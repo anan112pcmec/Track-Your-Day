@@ -128,7 +128,6 @@ impl CpuUtilData {
             *self.soft_uptime = std::format!("{h:02}:{m:02}:{s:02}");
         }
 
-        // ---------- soft_speed_clock & hard_base_speed ----------
         unsafe {
             let logical_count = std::cmp::max(*self.hard_logical_processors as usize, 1);
             let mut infos: std::vec::Vec<windows::Win32::System::Power::PROCESSOR_POWER_INFORMATION> =
@@ -152,41 +151,41 @@ impl CpuUtilData {
         }
 
         unsafe {
-    let mut idle_time = windows::Win32::Foundation::FILETIME::default();
-    let mut kernel_time = windows::Win32::Foundation::FILETIME::default();
-    let mut user_time = windows::Win32::Foundation::FILETIME::default();
+            let mut idle_time = windows::Win32::Foundation::FILETIME::default();
+            let mut kernel_time = windows::Win32::Foundation::FILETIME::default();
+            let mut user_time = windows::Win32::Foundation::FILETIME::default();
 
-    let filetime_to_u64 = |ft: &windows::Win32::Foundation::FILETIME| -> u64 {
-        ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
-    };
+            let filetime_to_u64 = |ft: &windows::Win32::Foundation::FILETIME| -> u64 {
+                ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
+            };
 
-    if windows::Win32::System::Threading::GetSystemTimes(
-        Some(&mut idle_time),
-        Some(&mut kernel_time),
-        Some(&mut user_time),
-    ).is_ok() {
-        let idle = filetime_to_u64(&idle_time);
-        let kernel = filetime_to_u64(&kernel_time);
-        let user = filetime_to_u64(&user_time);
+            if windows::Win32::System::Threading::GetSystemTimes(
+                Some(&mut idle_time),
+                Some(&mut kernel_time),
+                Some(&mut user_time),
+            ).is_ok() {
+                let idle = filetime_to_u64(&idle_time);
+                let kernel = filetime_to_u64(&kernel_time);
+                let user = filetime_to_u64(&user_time);
 
-        // PENTING: `kernel_time` dari Windows itu SUDAH TERMASUK idle_time
-        // di dalamnya (bukan waktu kernel murni) — makanya idle harus
-        // dikurangin dari total, bukan dijumlahin.
-        let idle_diff = idle.saturating_sub(self.last_idle);
-        let kernel_diff = kernel.saturating_sub(self.last_kernel);
-        let user_diff = user.saturating_sub(self.last_user);
-        let total_diff = kernel_diff + user_diff;
+                // PENTING: `kernel_time` dari Windows itu SUDAH TERMASUK idle_time
+                // di dalamnya (bukan waktu kernel murni) — makanya idle harus
+                // dikurangin dari total, bukan dijumlahin.
+                let idle_diff = idle.saturating_sub(self.last_idle);
+                let kernel_diff = kernel.saturating_sub(self.last_kernel);
+                let user_diff = user.saturating_sub(self.last_user);
+                let total_diff = kernel_diff + user_diff;
 
-        if total_diff > 0 {
-            let busy_diff = total_diff.saturating_sub(idle_diff);
-            *self.soft_utilization = (busy_diff as f64 / total_diff as f64 * 100.0) as f32;
+                if total_diff > 0 {
+                    let busy_diff = total_diff.saturating_sub(idle_diff);
+                    *self.soft_utilization = (busy_diff as f64 / total_diff as f64 * 100.0) as f32;
+                }
+
+                self.last_idle = idle;
+                self.last_kernel = kernel;
+                self.last_user = user;
+            }
         }
-
-        self.last_idle = idle;
-        self.last_kernel = kernel;
-        self.last_user = user;
-    }
-}
 
         // ---------- hard_sockets, hard_cores, hard_l1/l2/l3_cache ----------
         unsafe {
@@ -260,7 +259,193 @@ impl CpuUtilData {
     }
 }
 
+#[derive(Debug)]
+pub struct RamUtilData {
+    hard_capacity: Box<f32>,
+    hard_speed: Box<u32>,
+    hard_slots_used: Box<u16>,
+    hard_form_factor: Box<&'static str>,
 
+    soft_hardware_reserve: Box<f32>,
+    soft_in_use: Box<f32>,
+    soft_available: Box<f32>,
+    soft_in_commited: Box<f32>,
+    soft_available_commited: Box<f32>,
+    soft_cached: Box<f32>,
+    soft_page_pool: Box<f32>,
+    soft_non_paged_pool: Box<f32>,
+}
+
+impl RamUtilData {
+    pub fn new() -> Self {
+        RamUtilData {
+            hard_capacity: Box::new(0.0),
+            hard_speed: Box::new(0),
+            hard_slots_used: Box::new(0),
+            hard_form_factor: Box::new("Unknown"),
+            soft_hardware_reserve: Box::new(0.0),
+            soft_in_use: Box::new(0.0),
+            soft_available: Box::new(0.0),
+            soft_in_commited: Box::new(0.0),
+            soft_available_commited: Box::new(0.0),
+            soft_cached: Box::new(0.0),
+            soft_page_pool: Box::new(0.0),
+            soft_non_paged_pool: Box::new(0.0),
+        }
+    }
+
+    pub fn update(&mut self) {
+        const BYTES_TO_GB: f32 = 1024.0 * 1024.0 * 1024.0;
+
+        // ---------- hard_capacity ----------
+        // GetPhysicallyInstalledSystemMemory baca dari SMBIOS = kapasitas
+        // FISIK terpasang (beda dari GlobalMemoryStatusEx yang cuma ngasih
+        // yang "kelihatan" oleh OS — bisa lebih kecil karena hardware reserved).
+        let mut installed_kb: u64 = 0;
+        unsafe {
+            let _ = windows::Win32::System::SystemInformation::GetPhysicallyInstalledSystemMemory(&mut installed_kb);
+        }
+        *self.hard_capacity = (installed_kb as f32 * 1024.0) / BYTES_TO_GB;
+
+        // ---------- soft_in_use, soft_available, soft_in_commited, soft_available_commited, soft_hardware_reserve ----------
+        unsafe {
+            let mut mem_status = windows::Win32::System::SystemInformation::MEMORYSTATUSEX::default();
+            mem_status.dwLength = std::mem::size_of::<windows::Win32::System::SystemInformation::MEMORYSTATUSEX>() as u32;
+
+            if windows::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut mem_status).is_ok() {
+                let total_phys_gb = mem_status.ullTotalPhys as f32 / BYTES_TO_GB;
+                let avail_phys_gb = mem_status.ullAvailPhys as f32 / BYTES_TO_GB;
+                *self.soft_in_use = total_phys_gb - avail_phys_gb;
+                *self.soft_available = avail_phys_gb;
+
+                // "Hardware reserved" ala Task Manager = terpasang fisik - yang kelihatan OS.
+                *self.soft_hardware_reserve = (*self.hard_capacity - total_phys_gb).max(0.0);
+
+                // Commit charge: total page file "budget" vs yang masih tersisa.
+                let total_commit_gb = mem_status.ullTotalPageFile as f32 / BYTES_TO_GB;
+                let avail_commit_gb = mem_status.ullAvailPageFile as f32 / BYTES_TO_GB;
+                *self.soft_in_commited = total_commit_gb - avail_commit_gb;
+                *self.soft_available_commited = avail_commit_gb;
+            }
+        }
+
+        // ---------- soft_cached, soft_page_pool, soft_non_paged_pool ----------
+        // Sama kayak di CpuUtilData: GetPerformanceInfo juga punya angka-angka
+        // memory ini sekalian (dalam satuan "pages", dikali PageSize jadi bytes).
+        unsafe {
+            let mut perf_info = windows::Win32::System::ProcessStatus::PERFORMANCE_INFORMATION::default();
+            let size = std::mem::size_of::<windows::Win32::System::ProcessStatus::PERFORMANCE_INFORMATION>() as u32;
+            if windows::Win32::System::ProcessStatus::GetPerformanceInfo(&mut perf_info, size).is_ok() {
+                let page_size = perf_info.PageSize as f32;
+                *self.soft_cached = (perf_info.SystemCache as f32 * page_size) / BYTES_TO_GB;
+                *self.soft_page_pool = (perf_info.KernelPaged as f32 * page_size) / BYTES_TO_GB;
+                *self.soft_non_paged_pool = (perf_info.KernelNonpaged as f32 * page_size) / BYTES_TO_GB;
+            }
+        }
+
+        // ---------- hard_speed, hard_slots_used, hard_form_factor ----------
+        // Paling ribet: gak ada API langsung buat ini, harus baca tabel
+        // mentah SMBIOS (data yang sama yang dipakai BIOS/UEFI) dan parse
+        // manual byte-per-byte struktur "Type 17 - Memory Device".
+        unsafe {
+            const RSMB_SIGNATURE: u32 = 0x52534D42; // ASCII "RSMB"
+            let provider = windows::Win32::System::SystemInformation::FIRMWARE_TABLE_PROVIDER(RSMB_SIGNATURE);
+
+            // Panggilan pertama: buffer `None`, cuma buat tau ukuran yang dibutuhkan.
+            let needed_size = windows::Win32::System::SystemInformation::GetSystemFirmwareTable(
+                provider,
+                0,
+                None,
+            );
+
+            if needed_size > 0 {
+                let mut buffer: std::vec::Vec<u8> = std::vec![0u8; needed_size as usize];
+                let actual_size = windows::Win32::System::SystemInformation::GetSystemFirmwareTable(
+                    provider,
+                    0,
+                    Some(&mut buffer),
+                );
+
+                if actual_size > 0 {
+                    // Header RawSMBIOSData: 4 byte info + 4 byte panjang tabel,
+                    // baru setelah itu data SMBIOS mentahnya dimulai.
+                    let table_data = &buffer[8..];
+
+                    let mut offset = 0usize;
+                    let mut slots_used = 0u16;
+                    let mut speeds_found: std::vec::Vec<u16> = std::vec::Vec::new();
+                    let mut form_factor: &'static str = "Unknown";
+
+                    while offset + 4 <= table_data.len() {
+                        let struct_type = table_data[offset];
+                        let struct_length = table_data[offset + 1] as usize;
+
+                        if struct_length < 4 || offset + struct_length > table_data.len() {
+                            break;
+                        }
+
+                        if struct_type == 17 && struct_length >= 0x15 {
+                            // Offset 0x0C-0x0D: Size. 0 = slot kosong, 0xFFFF = unknown.
+                            let size_raw = u16::from_le_bytes([table_data[offset + 0x0C], table_data[offset + 0x0D]]);
+                            if size_raw != 0 && size_raw != 0xFFFF {
+                                slots_used += 1;
+
+                                // Offset 0x0E: Form Factor (cuma dicatat dari slot pertama yang keisi).
+                                if form_factor == "Unknown" {
+                                    form_factor = match table_data[offset + 0x0E] {
+                                        0x09 => "DIMM",
+                                        0x0D => "SODIMM",
+                                        0x08 => "SIMM",
+                                        _ => "Other",
+                                    };
+                                }
+
+                                // Offset 0x15-0x16: Speed (MHz), kalau struct-nya cukup panjang.
+                                if struct_length >= 0x17 {
+                                    let speed = u16::from_le_bytes([table_data[offset + 0x15], table_data[offset + 0x16]]);
+                                    if speed > 0 {
+                                        speeds_found.push(speed);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Lompat ke akhir bagian "formatted" struct, lalu lewatin
+                        // deretan string yang diakhiri byte 0x00 0x00 (double-null).
+                        let mut cursor = offset + struct_length;
+                        while cursor + 1 < table_data.len() && !(table_data[cursor] == 0 && table_data[cursor + 1] == 0) {
+                            cursor += 1;
+                        }
+                        offset = cursor + 2;
+                    }
+
+                    *self.hard_slots_used = slots_used;
+                    *self.hard_form_factor = form_factor;
+                    if !speeds_found.is_empty() {
+                        *self.hard_speed = speeds_found.iter().map(|&s| s as u32).sum::<u32>() / speeds_found.len() as u32;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn to_snapshot(&self) -> separation::RamSnapshot {
+        separation::RamSnapshot {
+            hard_capacity: *self.hard_capacity,
+            hard_speed: *self.hard_speed,
+            hard_slots_used: *self.hard_slots_used,
+            hard_form_factor: (*self.hard_form_factor).to_string(),
+            soft_hardware_reserve: *self.soft_hardware_reserve,
+            soft_in_use: *self.soft_in_use,
+            soft_available: *self.soft_available,
+            soft_in_commited: *self.soft_in_commited,
+            soft_available_commited: *self.soft_available_commited,
+            soft_cached: *self.soft_cached,
+            soft_page_pool: *self.soft_page_pool,
+            soft_non_paged_pool: *self.soft_non_paged_pool,
+        }
+    }
+}
 
 pub struct MutatorWatcher {
     store: Arc<dyn ActivityStore>,
@@ -269,6 +454,7 @@ pub struct MutatorWatcher {
     key_counter: KeyCounter,
     process_window: usize,
     cpu_util: CpuUtilData,
+    ram_util: RamUtilData,
 }
 
 impl MutatorWatcher {
@@ -279,8 +465,9 @@ impl MutatorWatcher {
         key_counter: KeyCounter,
         process_window: usize,
         cpu_util: CpuUtilData,
+        ram_util: RamUtilData,
     ) -> Self {
-        Self { store, notify, interval, key_counter, process_window, cpu_util }
+        Self { store, notify, interval, key_counter, process_window, cpu_util, ram_util }
     }
 
     /// Jalankan loop watcher. Dipanggil sebagai tokio task terpisah dari `cli`.
@@ -346,6 +533,16 @@ impl MutatorWatcher {
                 };
                 self.store.save(event_cpu.clone()).await?;
                 let _ = self.notify.send(event_cpu);
+            }
+
+            {
+                self.ram_util.update();
+                let event_ram = separation::ActivityEvent {
+                    timestamp: Utc::now(),
+                    kind: separation::ActivityKind::Ram(self.ram_util.to_snapshot()),
+                };
+                self.store.save(event_ram.clone()).await?;
+                let _ = self.notify.send(event_ram);
             }
         }
     }
