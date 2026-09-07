@@ -50,6 +50,20 @@ pub struct RamSnapshot {
     pub soft_non_paged_pool: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskSnapshot {
+    pub hard_capacity: u32,
+    pub hard_formatted: u32,
+    pub hard_system_disk: bool,
+    pub hard_type: String,
+    pub hard_capacity_in_use: u32,
+    pub soft_read_speed: f32,
+    pub soft_write_speed: f32,
+    pub soft_active_time: f32,
+    pub soft_average_response_time: f32,
+}
+
+
 /// Jenis data mentah yang mau kamu rekam untuk "track your day".
 /// Tinggal tambah varian di sini kalau mau nambah sinyal baru
 /// (mis. AppSwitch, ClipboardActivity, dst).
@@ -60,6 +74,7 @@ pub enum ActivityKind {
     TotalProcess { process: usize },
     Cpu(CpuSnapshot),
     Ram(RamSnapshot),
+    Disk(DiskSnapshot),
 }
 
 /// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.

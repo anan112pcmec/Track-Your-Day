@@ -418,6 +418,8 @@ impl RamUtilData {
                         }
                         offset = cursor + 2;
                     }
+                    
+                    
 
                     *self.hard_slots_used = slots_used;
                     *self.hard_form_factor = form_factor;
@@ -447,6 +449,254 @@ impl RamUtilData {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum TypeDisk {
+    SSD(String),
+    HDD(String),
+}
+
+impl TypeDisk {
+    fn name(&self) -> String {
+        match self {
+            TypeDisk::SSD(name) => format!("SSD: {}", name),
+            TypeDisk::HDD(name) => format!("HDD: {}", name),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DiskUtilData {
+    hard_capacity: u32,
+    hard_formatted: u32,
+    hard_system_disk: bool,
+    hard_type: TypeDisk,
+    hard_capacity_in_use: u32,
+    
+
+    soft_read_speed: f32,
+    soft_write_speed: f32,
+    soft_active_time: f32,
+    soft_average_response_time: f32,
+
+    // State internal buat ngitung delta antar tick — sama pola dengan
+    // last_idle/last_kernel di CpuUtilData. Angka dari IOCTL_DISK_PERFORMANCE
+    // itu KUMULATIF sejak counter diaktifkan, bukan angka sesaat.
+    last_bytes_read: i64,
+    last_bytes_written: i64,
+    last_read_time: i64,
+    last_write_time: i64,
+    last_idle_time: i64,
+    last_read_count: u32,
+    last_write_count: u32,
+    last_query_time: i64,
+}
+
+impl DiskUtilData {
+    pub fn new() -> Self {
+        DiskUtilData {
+            hard_capacity: 0,
+            hard_formatted: 0,
+            hard_system_disk: true, // asumsi: disk yang dipantau = disk sistem
+            hard_type: TypeDisk::HDD("Unknown".to_string()),
+            hard_capacity_in_use: 0,
+
+            soft_read_speed: 0.0,
+            soft_write_speed: 0.0,
+            soft_active_time: 0.0,
+            soft_average_response_time: 0.0,
+
+            last_bytes_read: 0,
+            last_bytes_written: 0,
+            last_read_time: 0,
+            last_write_time: 0,
+            last_idle_time: 0,
+            last_read_count: 0,
+            last_write_count: 0,
+            last_query_time: 0,
+        }
+    }
+
+    pub fn update(&mut self) {
+        // PENTING: hardcode "\\.\PhysicalDrive0" — asumsi disk nomor 0
+        // adalah disk sistem kamu. Kalau ada lebih dari 1 disk fisik dan
+        // sistemnya bukan disk 0, ini bakal baca disk yang salah.
+        let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
+
+        unsafe {
+            let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
+                windows::core::PCWSTR(drive_path.as_ptr()),
+                0, // gak butuh akses baca/tulis data, cuma query metadata
+                windows::Win32::Storage::FileSystem::FILE_SHARE_READ
+                    | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
+                None,
+                windows::Win32::Storage::FileSystem::OPEN_EXISTING,
+                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
+                None,
+            );
+
+            if let Ok(handle) = handle_result {
+                // ---------- hard_type: SSD vs HDD ----------
+                // Trik resminya Disk Defragmenter Windows: cek "seek penalty".
+                // Kalau IncursSeekPenalty = false → SSD, true → HDD.
+                let query = windows::Win32::System::Ioctl::STORAGE_PROPERTY_QUERY {
+                    PropertyId: windows::Win32::System::Ioctl::StorageDeviceSeekPenaltyProperty,
+                    QueryType: windows::Win32::System::Ioctl::PropertyStandardQuery,
+                    AdditionalParameters: [0],
+                };
+                let mut seek_penalty = windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR::default();
+                let mut bytes_returned: u32 = 0;
+
+                let seek_result = windows::Win32::System::IO::DeviceIoControl(
+                    handle,
+                    windows::Win32::System::Ioctl::IOCTL_STORAGE_QUERY_PROPERTY,
+                    Some(&query as *const _ as *const std::ffi::c_void),
+                    std::mem::size_of::<windows::Win32::System::Ioctl::STORAGE_PROPERTY_QUERY>() as u32,
+                    Some(&mut seek_penalty as *mut _ as *mut std::ffi::c_void),
+                    std::mem::size_of::<windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR>() as u32,
+                    Some(&mut bytes_returned),
+                    None,
+                );
+
+                if seek_result.is_ok() {
+                    self.hard_type = if seek_penalty.IncursSeekPenalty {
+                        TypeDisk::HDD("PhysicalDrive0".to_string())
+                    } else {
+                        TypeDisk::SSD("PhysicalDrive0".to_string())
+                    };
+                }
+
+                // ---------- soft_read_speed, soft_write_speed, soft_active_time, soft_average_response_time ----------
+                let mut perf = windows::Win32::System::Ioctl::DISK_PERFORMANCE::default();
+                let mut perf_bytes_returned: u32 = 0;
+
+                let perf_result = windows::Win32::System::IO::DeviceIoControl(
+                    handle,
+                    windows::Win32::System::Ioctl::IOCTL_DISK_PERFORMANCE,
+                    None,
+                    0,
+                    Some(&mut perf as *mut _ as *mut std::ffi::c_void),
+                    std::mem::size_of::<windows::Win32::System::Ioctl::DISK_PERFORMANCE>() as u32,
+                    Some(&mut perf_bytes_returned),
+                    None,
+                );
+
+                if perf_result.is_ok() {
+                    let query_diff = perf.QueryTime - self.last_query_time;
+
+                    if query_diff > 0 {
+                        // QueryTime satuannya 100-nanodetik sejak boot (sama kayak FILETIME).
+                        let elapsed_secs = query_diff as f64 / 10_000_000.0;
+
+                        let bytes_read_diff = (perf.BytesRead - self.last_bytes_read).max(0) as f64;
+                        let bytes_written_diff = (perf.BytesWritten - self.last_bytes_written).max(0) as f64;
+                        self.soft_read_speed = (bytes_read_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
+                        self.soft_write_speed = (bytes_written_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
+
+                        // Sama logikanya kayak CPU: IdleTime dikurangin dari total,
+                        // sisanya itu waktu disk beneran sibuk.
+                        let idle_diff = (perf.IdleTime - self.last_idle_time).max(0) as f64;
+                        let active_ratio = 1.0 - (idle_diff / query_diff as f64);
+                        self.soft_active_time = (active_ratio * 100.0).clamp(0.0, 100.0) as f32;
+
+                        let read_time_diff = (perf.ReadTime - self.last_read_time).max(0) as f64;
+                        let write_time_diff = (perf.WriteTime - self.last_write_time).max(0) as f64;
+                        let read_count_diff = perf.ReadCount.saturating_sub(self.last_read_count) as f64;
+                        let write_count_diff = perf.WriteCount.saturating_sub(self.last_write_count) as f64;
+                        let total_io_time = read_time_diff + write_time_diff;
+                        let total_io_count = read_count_diff + write_count_diff;
+
+                        if total_io_count > 0.0 {
+                            // Konversi 100-nanodetik ke milidetik.
+                            self.soft_average_response_time = ((total_io_time / total_io_count) / 10_000.0) as f32;
+                        }
+                    }
+
+                    self.last_bytes_read = perf.BytesRead;
+                    self.last_bytes_written = perf.BytesWritten;
+                    self.last_read_time = perf.ReadTime;
+                    self.last_write_time = perf.WriteTime;
+                    self.last_idle_time = perf.IdleTime;
+                    self.last_read_count = perf.ReadCount;
+                    self.last_write_count = perf.WriteCount;
+                    self.last_query_time = perf.QueryTime;
+                }
+
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+        }
+
+        // ---------- hard_capacity, hard_formatted ----------
+        // Sengaja beda sumber: hard_capacity dari ukuran RAW disk fisik
+        // (IOCTL_DISK_GET_LENGTH_INFO), hard_formatted dari ukuran volume
+        // SETELAH diformat filesystem (GetDiskFreeSpaceExW) — biasanya
+        // hard_formatted sedikit lebih kecil karena overhead filesystem.
+        unsafe {
+            let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
+            let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
+                windows::core::PCWSTR(drive_path.as_ptr()),
+                0,
+                windows::Win32::Storage::FileSystem::FILE_SHARE_READ
+                    | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
+                None,
+                windows::Win32::Storage::FileSystem::OPEN_EXISTING,
+                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
+                None,
+            );
+
+            if let Ok(handle) = handle_result {
+                let mut length_info = windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION::default();
+                let mut bytes_returned: u32 = 0;
+
+                let length_result = windows::Win32::System::IO::DeviceIoControl(
+                    handle,
+                    windows::Win32::System::Ioctl::IOCTL_DISK_GET_LENGTH_INFO,
+                    None,
+                    0,
+                    Some(&mut length_info as *mut _ as *mut std::ffi::c_void),
+                    std::mem::size_of::<windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION>() as u32,
+                    Some(&mut bytes_returned),
+                    None,
+                );
+
+                if length_result.is_ok() {
+                    self.hard_capacity = (length_info.Length / (1024 * 1024)) as u32; // dalam MB
+                }
+
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+
+            let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
+            let mut total_bytes: u64 = 0;
+            let mut free_bytes: u64 = 0; // <- tambahan
+            if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(system_drive.as_ptr()),
+                None,
+                Some(&mut total_bytes),
+                Some(&mut free_bytes), // <- diisi, sebelumnya None
+            )
+            .is_ok()
+            {
+                self.hard_formatted = (total_bytes / (1024 * 1024)) as u32; // dalam MB
+                self.hard_capacity_in_use = ((total_bytes.saturating_sub(free_bytes)) / (1024 * 1024)) as u32; // <- tambahan
+            }
+        }
+    }
+
+    pub fn to_snapshot(&self) -> separation::DiskSnapshot {
+        separation::DiskSnapshot {
+            hard_capacity: self.hard_capacity,
+            hard_formatted: self.hard_formatted,
+            hard_system_disk: self.hard_system_disk,
+            hard_type: self.hard_type.name(),
+            hard_capacity_in_use: self.hard_capacity_in_use, // <- tambahan
+            soft_read_speed: self.soft_read_speed,
+            soft_write_speed: self.soft_write_speed,
+            soft_active_time: self.soft_active_time,
+            soft_average_response_time: self.soft_average_response_time,
+        }
+    }
+}
+
 pub struct MutatorWatcher {
     store: Arc<dyn ActivityStore>,
     notify: broadcast::Sender<ActivityEvent>,
@@ -455,6 +705,7 @@ pub struct MutatorWatcher {
     process_window: usize,
     cpu_util: CpuUtilData,
     ram_util: RamUtilData,
+    disk_util: DiskUtilData,
 }
 
 impl MutatorWatcher {
@@ -466,8 +717,9 @@ impl MutatorWatcher {
         process_window: usize,
         cpu_util: CpuUtilData,
         ram_util: RamUtilData,
+        disk_util: DiskUtilData
     ) -> Self {
-        Self { store, notify, interval, key_counter, process_window, cpu_util, ram_util }
+        Self { store, notify, interval, key_counter, process_window, cpu_util, ram_util, disk_util }
     }
 
     /// Jalankan loop watcher. Dipanggil sebagai tokio task terpisah dari `cli`.
@@ -543,6 +795,16 @@ impl MutatorWatcher {
                 };
                 self.store.save(event_ram.clone()).await?;
                 let _ = self.notify.send(event_ram);
+            }
+
+            {
+                self.disk_util.update();
+                let event_disk = separation::ActivityEvent {
+                    timestamp: Utc::now(),
+                    kind: separation::ActivityKind::Disk(self.disk_util.to_snapshot()),
+                };
+                self.store.save(event_disk.clone()).await?;
+                let _ = self.notify.send(event_disk);
             }
         }
     }

@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 use database::MemoryStore;
-use separation::{ActivityStore, CpuSnapshot, RamSnapshot};
+use separation::{ActivityStore, CpuSnapshot, DiskSnapshot, RamSnapshot};
 use std::collections::VecDeque;
 use std::io::stdout;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use watcher_mutator::{CpuUtilData, MutatorWatcher, RamUtilData};
+use watcher_mutator::{CpuUtilData, DiskUtilData, MutatorWatcher, RamUtilData};
 use watcher_reactive::{LoggingReactor, ReactiveWatcher};
 
 use crossterm::{
@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
         0,
         CpuUtilData::new(),
         RamUtilData::new(),
+        DiskUtilData::new()
     );
     let mutator_handle = tokio::spawn(mutator.run());
 
@@ -102,6 +103,7 @@ async fn main() -> Result<()> {
 
     let mut active_tab = ActiveTab::Activity;
     let mut perf_menu = PerfMenu::Cpu;
+    let mut current_menu: u8 = 0; // 0=Cpu, 1=Memory, 2=Disk, 3=Wifi   <- PINDAH KE SINI
 
     const HISTORY_LEN: usize = 40;
     let mut wpm_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -110,6 +112,7 @@ async fn main() -> Result<()> {
     let mut window_history: VecDeque<String> = VecDeque::with_capacity(5);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
     // 7) MAIN TUI LOOP
     loop {
@@ -132,6 +135,7 @@ async fn main() -> Result<()> {
         // Ambil snapshot CPU & RAM terbaru dari database lewat api_state.
         let cpu_snapshot: Option<CpuSnapshot> = api_state.cpu_util_check().await.ok().flatten();
         let ram_snapshot: Option<RamSnapshot> = api_state.ram_util_check().await.ok().flatten();
+        let disk_snapshot: Option<DiskSnapshot> = api_state.disk_util_check().await.ok().flatten();
 
         if wpm_history.len() == HISTORY_LEN {
             wpm_history.pop_front();
@@ -181,6 +185,21 @@ async fn main() -> Result<()> {
                     }
                 })
                 .unwrap_or(0),
+        );
+
+        if disk_history.len() == HISTORY_LEN{
+            disk_history.pop_front();
+        }
+        disk_history.push_back(
+            disk_snapshot
+            .as_ref()
+            .map(|s| {
+                if s.hard_capacity > 0 {
+                    ((s.hard_capacity_in_use / s.hard_capacity) * 100) as u64
+                } else {
+                    0
+                }
+            }).unwrap_or(0),
         );
 
         terminal.draw(|f| {
@@ -430,7 +449,73 @@ async fn main() -> Result<()> {
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
-                        PerfMenu::Disk | PerfMenu::Wifi => {
+                        PerfMenu::Disk => {
+                            let detail_rows = Layout::default()
+                                .direction(Direction::Vertical)
+                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .split(sections[1]);
+
+                            let usage_percent = disk_snapshot.as_ref().map(|s| s.soft_active_time).unwrap_or(0.0);
+                            let usage_gauge = Gauge::default()
+                                .block(Block::bordered().title(" Disk Active Time "))
+                                .gauge_style(Style::default().fg(Color::Yellow))
+                                .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
+                                .label(format!("{usage_percent:.1}%"));
+                            f.render_widget(usage_gauge, detail_rows[0]);
+
+                            let disk_points: Vec<(f64, f64)> = disk_history
+                                .iter()
+                                .enumerate()
+                                .map(|(i, v)| (i as f64, *v as f64))
+                                .collect();
+
+                            let disk_dataset = Dataset::default()
+                                .name("Active %")
+                                .marker(Marker::Braille)
+                                .graph_type(GraphType::Line)
+                                .style(Style::default().fg(Color::Yellow))
+                                .data(&disk_points);
+
+                            let x_axis = Axis::default()
+                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .bounds([0.0, HISTORY_LEN as f64])
+                                .labels(["awal", "sekarang"]);
+                            let y_axis = Axis::default()
+                                .title(Span::styled("Persen", Style::default().fg(Color::DarkGray)))
+                                .bounds([0.0, 100.0])
+                                .labels(["0", "50", "100"]);
+
+                            let disk_chart = Chart::new(vec![disk_dataset])
+                                .block(Block::bordered().title(" History "))
+                                .x_axis(x_axis)
+                                .y_axis(y_axis);
+                            f.render_widget(disk_chart, detail_rows[1]);
+
+                            let detail_text: Vec<Line> = if let Some(snapshot) = &disk_snapshot {
+                                vec![
+                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(format!("Active time      : {:.1}%", snapshot.soft_active_time)),
+                                    Line::from(format!("Read speed       : {:.2} MB/s", snapshot.soft_read_speed)),
+                                    Line::from(format!("Write speed      : {:.2} MB/s", snapshot.soft_write_speed)),
+                                    Line::from(format!("Avg response time: {:.2} ms", snapshot.soft_average_response_time)),
+                                    Line::from(""),
+                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(format!("Capacity         : {} GB", snapshot.hard_capacity)),
+                                    Line::from(format!("Formatted        : {} GB", snapshot.hard_formatted)),
+                                    Line::from(format!(
+                                        "System disk      : {}",
+                                        if snapshot.hard_system_disk { "Yes" } else { "No" }
+                                    )),
+                                    Line::from(format!("Type             : {}", snapshot.hard_type)),
+                                ]
+                            } else {
+                                vec![Line::from(Span::styled("Menunggu data Disk pertama...", Style::default().fg(Color::DarkGray)))]
+                            };
+                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            f.render_widget(detail_panel, detail_rows[2]);
+                        }
+
+                        PerfMenu::Wifi => {
                             let placeholder = Paragraph::new(Span::styled(
                                 "belum diisi — nyusul besok",
                                 Style::default().fg(Color::DarkGray),
@@ -443,7 +528,6 @@ async fn main() -> Result<()> {
             }
         })?;
 
-       let mut current_menu: u8 = 0; // 0=Cpu, 1=Memory, 2=Disk, 3=Wifi
 
         if event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
@@ -470,8 +554,8 @@ async fn main() -> Result<()> {
                 }
 
                 // Update perf_menu secara otomatis berdasarkan nilai current_menu
-                perf_menu = match current_menu {
-                    0 => PerfMenu::Cpu,
+               perf_menu = match current_menu {
+                    0 => PerfMenu::Cpu,   // <- harusnya Cpu
                     1 => PerfMenu::Memory,
                     2 => PerfMenu::Disk,
                     _ => PerfMenu::Wifi,

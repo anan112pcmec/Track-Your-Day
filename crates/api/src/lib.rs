@@ -70,6 +70,15 @@ impl ApiState {
         Ok(latest_ram)
     }
 
+    
+    pub async fn disk_util_check(&self) -> anyhow::Result<Option<separation::DiskSnapshot>> {
+        let events: Vec<separation::ActivityEvent> = self.store.recent(200).await?;
+        let latest_disk = events.iter().rev().find_map(|event| match &event.kind {
+            separation::ActivityKind::Disk(snapshot) => Some(snapshot.clone()),
+            _ => None,
+        });
+        Ok(latest_disk)
+    }
    
 
 
