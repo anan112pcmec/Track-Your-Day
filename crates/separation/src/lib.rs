@@ -63,6 +63,21 @@ pub struct DiskSnapshot {
     pub soft_average_response_time: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WiFiSnapshot {
+    pub hard_name_wireless_lan: String,
+    pub hard_throughput: f32,
+    pub hard_send: f32,
+    pub hard_receive: f32,
+
+    pub soft_adapter_name: String,
+    pub soft_ssid: String,
+    pub soft_connection_type: String,
+    pub soft_ipv4_address: String,
+    pub soft_ipv6_address: String,
+    pub soft_signal_strength: u32,
+}
+
 
 /// Jenis data mentah yang mau kamu rekam untuk "track your day".
 /// Tinggal tambah varian di sini kalau mau nambah sinyal baru
@@ -75,6 +90,7 @@ pub enum ActivityKind {
     Cpu(CpuSnapshot),
     Ram(RamSnapshot),
     Disk(DiskSnapshot),
+    WiFi(WiFiSnapshot)
 }
 
 /// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.

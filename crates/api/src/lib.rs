@@ -79,6 +79,15 @@ impl ApiState {
         });
         Ok(latest_disk)
     }
+    
+    pub async fn wifi_util_check(&self) -> anyhow::Result<Option<separation::WiFiSnapshot>> {
+        let events: Vec<separation::ActivityEvent> = self.store.recent(200).await?;
+        let latest_wifi_util = events.iter().rev().find_map(|event| match &event.kind {
+            separation::ActivityKind::WiFi(snapshot) => Some(snapshot.clone()),
+            _ => None,
+        });
+        Ok(latest_wifi_util)
+    }
    
 
 

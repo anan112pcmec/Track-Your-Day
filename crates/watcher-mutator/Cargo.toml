@@ -17,6 +17,9 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Ioctl",
     "Win32_System_IO",
     "Win32_Foundation",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
 ] }
 
 rdev="0.5"

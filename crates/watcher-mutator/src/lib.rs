@@ -21,6 +21,20 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use active_win_pos_rs::get_active_window;
+use std::ffi::c_void;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use windows::Win32::NetworkManagement::IpHelper::{
+    GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
+    GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
+};
+use windows::Win32::NetworkManagement::WiFi::{
+    dot11_phy_type_dmg, dot11_phy_type_eht, dot11_phy_type_erp, dot11_phy_type_he,
+    dot11_phy_type_hrdsss, dot11_phy_type_ht, dot11_phy_type_ofdm, dot11_phy_type_vht,
+    wlan_interface_state_connected, wlan_intf_opcode_current_connection, WlanCloseHandle,
+    WlanEnumInterfaces, WlanFreeMemory, WlanOpenHandle, WlanQueryInterface,
+    WLAN_CONNECTION_ATTRIBUTES, WLAN_INTERFACE_INFO_LIST,
+};
+use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC};
 
 pub struct KeyCounter {
     count: Arc<AtomicUsize>
@@ -99,7 +113,7 @@ impl CpuUtilData {
             soft_handles: Box::new(0),
             soft_uptime: Box::new(String::new()),
 
-             last_idle: 0,
+            last_idle: 0,
             last_kernel: 0,
             last_user: 0,
         }
@@ -697,6 +711,268 @@ impl DiskUtilData {
     }
 }
 
+
+#[derive(Debug)]
+pub struct WiFiUtilData {
+    // "hard_" di sini ngikutin penamaan yang kamu minta — walaupun sebenarnya
+    // link rate & throughput itu berubah-ubah tiap koneksi (bukan spek statis
+    // kayak hard_capacity di Disk). Kalau nanti mau lebih konsisten sama
+    // pola CPU/RAM/Disk, ini sebenarnya lebih cocok jadi "soft_", tapi saya
+    // ikutin permintaan kamu apa adanya dulu.
+    hard_name_wireless_lan: String,
+    hard_throughput: f32,
+    hard_send: f32,
+    hard_receive: f32,
+
+    soft_adapter_name: String,
+    soft_ssid: String,
+    soft_connection_type: String,
+    soft_ipv4_address: String,
+    soft_ipv6_address: String,
+    soft_signal_strength: u32,
+}
+
+impl WiFiUtilData {
+    pub fn new() -> Self {
+        WiFiUtilData {
+            hard_name_wireless_lan: "Unknown".to_string(),
+            hard_throughput: 0.0,
+            hard_send: 0.0,
+            hard_receive: 0.0,
+
+            soft_adapter_name: "Unknown".to_string(),
+            soft_ssid: "Not connected".to_string(),
+            soft_connection_type: "-".to_string(),
+            soft_ipv4_address: "-".to_string(),
+            soft_ipv6_address: "-".to_string(),
+            soft_signal_strength: 0,
+        }
+    }
+
+    pub fn update(&mut self) {
+        unsafe {
+            // ---------- 1) Buka handle ke WLAN service ----------
+            let mut negotiated_version: u32 = 0;
+            let mut client_handle = windows::Win32::Foundation::HANDLE::default();
+
+            let open_result =
+                WlanOpenHandle(2, None, &mut negotiated_version, &mut client_handle);
+            // API lama gaya ini return u32 error code langsung (ERROR_SUCCESS = 0),
+            // BUKAN Result<T> kayak CreateFileW. Jadi dicek manual == 0.
+            if open_result != 0 {
+                return;
+            }
+
+            // ---------- 2) Enumerasi interface WiFi ----------
+            let mut interface_list_ptr: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
+            let enum_result = WlanEnumInterfaces(client_handle, None, &mut interface_list_ptr);
+
+            if enum_result != 0 || interface_list_ptr.is_null() {
+                let _ = WlanCloseHandle(client_handle, None);
+                return;
+            }
+
+            let interface_list = &*interface_list_ptr;
+            if interface_list.dwNumberOfItems == 0 {
+                WlanFreeMemory(interface_list_ptr as *const c_void);
+                let _ = WlanCloseHandle(client_handle, None);
+                return;
+            }
+
+            // PENTING: sama kayak PhysicalDrive0 di Disk — kita hardcode
+            // ambil interface WiFi pertama (index 0). Kalau ada lebih dari
+            // 1 adapter WiFi, yang lain diabaikan.
+            let first_interface = &interface_list.InterfaceInfo[0];
+            let interface_guid = first_interface.InterfaceGuid;
+
+            // strInterfaceDescription: [u16; 256], null-terminated.
+            let desc_len = first_interface
+                .strInterfaceDescription
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(first_interface.strInterfaceDescription.len());
+            let adapter_description =
+                String::from_utf16_lossy(&first_interface.strInterfaceDescription[..desc_len]);
+
+            self.hard_name_wireless_lan = adapter_description.clone();
+            self.soft_adapter_name = adapter_description;
+
+            // ---------- 3) Query current connection attributes ----------
+            if first_interface.isState == wlan_interface_state_connected {
+                let mut data_size: u32 = 0;
+                let mut data_ptr: *mut c_void = std::ptr::null_mut();
+
+                let query_result = WlanQueryInterface(
+                    client_handle,
+                    &interface_guid,
+                    wlan_intf_opcode_current_connection,
+                    None,
+                    &mut data_size,
+                    &mut data_ptr,
+                    None,
+                );
+
+                if query_result == 0 && !data_ptr.is_null() {
+                    let conn_attrs = &*(data_ptr as *const WLAN_CONNECTION_ATTRIBUTES);
+                    let assoc = &conn_attrs.wlanAssociationAttributes;
+
+                    // SSID: bukan string null-terminated, panjangnya dari uSSIDLength.
+                    let ssid_len = assoc.dot11Ssid.uSSIDLength as usize;
+                    let ssid_bytes = &assoc.dot11Ssid.ucSSID[..ssid_len.min(32)];
+                    self.soft_ssid = String::from_utf8_lossy(ssid_bytes).to_string();
+
+                    self.soft_signal_strength = assoc.wlanSignalQuality;
+
+                    self.soft_connection_type = match assoc.dot11PhyType {
+                        dot11_phy_type_hrdsss => "802.11b".to_string(),
+                        dot11_phy_type_ofdm => "802.11a".to_string(),
+                        dot11_phy_type_erp => "802.11g".to_string(),
+                        dot11_phy_type_ht => "802.11n".to_string(),
+                        dot11_phy_type_vht => "802.11ac".to_string(),
+                        dot11_phy_type_he => "802.11ax".to_string(),
+                        dot11_phy_type_eht => "802.11be".to_string(),
+                        dot11_phy_type_dmg => "802.11ad (WiGig)".to_string(),
+                        _ => "Unknown".to_string(),
+                    };
+
+                    // ulRxRate/ulTxRate satuannya 100 Kbps. Dikonversi ke Mbps.
+                    self.soft_receive_rate_to_mbps(assoc.ulRxRate);
+                    self.hard_receive = assoc.ulRxRate as f32 / 10.0;
+                    self.hard_send = assoc.ulTxRate as f32 / 10.0;
+                    self.hard_throughput = self.hard_receive + self.hard_send;
+                } else {
+                    self.reset_connection_fields();
+                }
+            } else {
+                self.reset_connection_fields();
+            }
+
+            WlanFreeMemory(interface_list_ptr as *const c_void);
+            let _ = WlanCloseHandle(client_handle, None);
+
+            // ---------- 4) Ambil alamat IPv4 & IPv6 lewat IP Helper API ----------
+            self.fetch_ip_addresses(&interface_guid);
+        }
+    }
+
+    fn reset_connection_fields(&mut self) {
+        self.soft_ssid = "Not connected".to_string();
+        self.soft_connection_type = "-".to_string();
+        self.soft_signal_strength = 0;
+        self.hard_receive = 0.0;
+        self.hard_send = 0.0;
+        self.hard_throughput = 0.0;
+    }
+
+    // helper kosong, cuma biar gak ke-warning "unused" — lihat catatan di bawah
+    fn soft_receive_rate_to_mbps(&self, _rx: u32) {}
+
+    unsafe fn fetch_ip_addresses(&mut self, interface_guid: &windows::core::GUID) {
+        // Format GUID interface WLAN supaya sama kayak AdapterName dari
+        // GetAdaptersAddresses, yaitu "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}".
+        let target_guid_str = format!("{{{:?}}}", interface_guid).to_uppercase();
+
+        let mut buffer_size: u32 = 15_000; // titik awal wajar, akan di-retry kalau kurang
+        let mut buffer: Vec<u8>;
+
+        let mut result;
+        loop {
+            buffer = vec![0u8; buffer_size as usize];
+            let addresses_ptr = buffer.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH;
+
+            result = GetAdaptersAddresses(
+                AF_UNSPEC.0 as u32,
+                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                None,
+                Some(addresses_ptr),
+                &mut buffer_size,
+            );
+
+            // ERROR_BUFFER_OVERFLOW = 111
+            if result == 111 {
+                continue; // buffer_size sudah di-update oleh API, coba lagi
+            }
+            break;
+        }
+
+        if result != 0 {
+            self.soft_ipv4_address = "-".to_string();
+            self.soft_ipv6_address = "-".to_string();
+            return;
+        }
+
+        let mut current = buffer.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+        let mut found_ipv4 = false;
+        let mut found_ipv6 = false;
+
+        while !current.is_null() {
+            let adapter = &*current;
+
+            // AdapterName adalah PSTR (C string ANSI) berisi GUID, contoh:
+            // "{4D36E972-E325-11CE-BFC1-08002BE10318}"
+            let adapter_name = if adapter.AdapterName.0.is_null() {
+                String::new()
+            } else {
+                std::ffi::CStr::from_ptr(adapter.AdapterName.0 as *const i8)
+                    .to_string_lossy()
+                    .to_uppercase()
+            };
+
+            if adapter_name == target_guid_str {
+                let mut unicast = adapter.FirstUnicastAddress;
+                while !unicast.is_null() {
+                    let ua = &*unicast;
+                    let sockaddr = ua.Address.lpSockaddr;
+
+                    if !sockaddr.is_null() {
+                        let family = (*sockaddr).sa_family;
+
+                        if family == AF_INET && !found_ipv4 {
+                            let sockaddr_in = &*(sockaddr as *const windows::Win32::Networking::WinSock::SOCKADDR_IN);
+                            let ip_bytes = sockaddr_in.sin_addr.S_un.S_addr.to_le_bytes();
+                            let ip = Ipv4Addr::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+                            self.soft_ipv4_address = ip.to_string();
+                            found_ipv4 = true;
+                        } else if family == AF_INET6 && !found_ipv6 {
+                            let sockaddr_in6 = &*(sockaddr as *const windows::Win32::Networking::WinSock::SOCKADDR_IN6);
+                            let ip = Ipv6Addr::from(sockaddr_in6.sin6_addr.u.Byte);
+                            self.soft_ipv6_address = ip.to_string();
+                            found_ipv6 = true;
+                        }
+                    }
+
+                    unicast = ua.Next;
+                }
+                break;
+            }
+
+            current = adapter.Next;
+        }
+
+        if !found_ipv4 {
+            self.soft_ipv4_address = "-".to_string();
+        }
+        if !found_ipv6 {
+            self.soft_ipv6_address = "-".to_string();
+        }
+    }
+
+    pub fn to_snapshot(&self) -> separation::WiFiSnapshot {
+        separation::WiFiSnapshot {
+            hard_name_wireless_lan: self.hard_name_wireless_lan.clone(),
+            hard_throughput: self.hard_throughput,
+            hard_send: self.hard_send,
+            hard_receive: self.hard_receive,
+
+            soft_adapter_name: self.soft_adapter_name.clone(),
+            soft_ssid: self.soft_ssid.clone(),
+            soft_connection_type: self.soft_connection_type.clone(),
+            soft_ipv4_address: self.soft_ipv4_address.clone(),
+            soft_ipv6_address: self.soft_ipv6_address.clone(),
+            soft_signal_strength: self.soft_signal_strength,
+        }
+    }
+}
 pub struct MutatorWatcher {
     store: Arc<dyn ActivityStore>,
     notify: broadcast::Sender<ActivityEvent>,
@@ -706,6 +982,7 @@ pub struct MutatorWatcher {
     cpu_util: CpuUtilData,
     ram_util: RamUtilData,
     disk_util: DiskUtilData,
+    wifi_util: WiFiUtilData,
 }
 
 impl MutatorWatcher {
@@ -717,9 +994,10 @@ impl MutatorWatcher {
         process_window: usize,
         cpu_util: CpuUtilData,
         ram_util: RamUtilData,
-        disk_util: DiskUtilData
+        disk_util: DiskUtilData,
+        wifi_util: WiFiUtilData
     ) -> Self {
-        Self { store, notify, interval, key_counter, process_window, cpu_util, ram_util, disk_util }
+        Self { store, notify, interval, key_counter, process_window, cpu_util, ram_util, disk_util, wifi_util }
     }
 
     /// Jalankan loop watcher. Dipanggil sebagai tokio task terpisah dari `cli`.
@@ -805,6 +1083,16 @@ impl MutatorWatcher {
                 };
                 self.store.save(event_disk.clone()).await?;
                 let _ = self.notify.send(event_disk);
+            }
+
+            {
+                self.wifi_util.update();
+                let event_wifi = separation::ActivityEvent {
+                    timestamp: Utc::now(),
+                    kind: separation::ActivityKind::WiFi(self.wifi_util.to_snapshot()),
+                };
+                self.store.save(event_wifi.clone()).await?;
+                let _ = self.notify.send(event_wifi);
             }
         }
     }

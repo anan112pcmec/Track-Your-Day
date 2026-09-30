@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 use database::MemoryStore;
-use separation::{ActivityStore, CpuSnapshot, DiskSnapshot, RamSnapshot};
+use separation::{ActivityStore, CpuSnapshot, DiskSnapshot, RamSnapshot, WiFiSnapshot};
 use std::collections::VecDeque;
 use std::io::stdout;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use watcher_mutator::{CpuUtilData, DiskUtilData, MutatorWatcher, RamUtilData};
+use watcher_mutator::{CpuUtilData, DiskUtilData, MutatorWatcher, RamUtilData, WiFiUtilData};
 use watcher_reactive::{LoggingReactor, ReactiveWatcher};
 
 use crossterm::{
@@ -82,7 +82,8 @@ async fn main() -> Result<()> {
         0,
         CpuUtilData::new(),
         RamUtilData::new(),
-        DiskUtilData::new()
+        DiskUtilData::new(),
+        WiFiUtilData::new()
     );
     let mutator_handle = tokio::spawn(mutator.run());
 
@@ -113,6 +114,7 @@ async fn main() -> Result<()> {
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut wifi_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
     // 7) MAIN TUI LOOP
     loop {
@@ -136,6 +138,7 @@ async fn main() -> Result<()> {
         let cpu_snapshot: Option<CpuSnapshot> = api_state.cpu_util_check().await.ok().flatten();
         let ram_snapshot: Option<RamSnapshot> = api_state.ram_util_check().await.ok().flatten();
         let disk_snapshot: Option<DiskSnapshot> = api_state.disk_util_check().await.ok().flatten();
+        let wifi_snapshot: Option<WiFiSnapshot> = api_state.wifi_util_check().await.ok().flatten();
 
         if wpm_history.len() == HISTORY_LEN {
             wpm_history.pop_front();
@@ -184,6 +187,16 @@ async fn main() -> Result<()> {
                         0
                     }
                 })
+                .unwrap_or(0),
+        );
+
+        if wifi_history.len() == HISTORY_LEN {
+            wifi_history.pop_front();
+        }
+        wifi_history.push_back(
+            wifi_snapshot
+                .as_ref()
+                .map(|s| s.hard_throughput.round() as u64)
                 .unwrap_or(0),
         );
 
@@ -516,12 +529,83 @@ async fn main() -> Result<()> {
                         }
 
                         PerfMenu::Wifi => {
-                            let placeholder = Paragraph::new(Span::styled(
-                                "belum diisi — nyusul besok",
-                                Style::default().fg(Color::DarkGray),
-                            ))
-                            .block(Block::bordered().title(" Detail "));
-                            f.render_widget(placeholder, sections[1]);
+                            let detail_rows = Layout::default()
+                                .direction(Direction::Vertical)
+                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .split(sections[1]);
+
+                            let throughput = wifi_snapshot.as_ref().map(|s| s.hard_throughput).unwrap_or(0.0);
+                            // Throughput itu satuannya Mbps, bukan persen (0-100), jadi Gauge
+                            // gak pas dipakai apa adanya. Solusinya: tetap tampilkan Gauge tapi
+                            // di-skala relatif ke throughput_max (dianggap 100 Mbps sebagai acuan
+                            // "penuh" — sesuaikan angka ini kalau adapter WiFi kamu bisa lebih
+                            // cepat dari itu, misal WiFi 6 bisa >600 Mbps).
+                            const THROUGHPUT_MAX: f32 = 100.0;
+                            let gauge_percent = ((throughput / THROUGHPUT_MAX) * 100.0).clamp(0.0, 100.0);
+                            let usage_gauge = Gauge::default()
+                                .block(Block::bordered().title(" WiFi Throughput "))
+                                .gauge_style(Style::default().fg(Color::Magenta))
+                                .percent(gauge_percent.round() as u16)
+                                .label(format!("{throughput:.1} Mbps"));
+                            f.render_widget(usage_gauge, detail_rows[0]);
+
+                            let wifi_points: Vec<(f64, f64)> = wifi_history
+                                .iter()
+                                .enumerate()
+                                .map(|(i, v)| (i as f64, *v as f64))
+                                .collect();
+
+                            let wifi_dataset = Dataset::default()
+                                .name("Throughput (Mbps)")
+                                .marker(Marker::Braille)
+                                .graph_type(GraphType::Line)
+                                .style(Style::default().fg(Color::Magenta))
+                                .data(&wifi_points);
+
+                            let x_axis = Axis::default()
+                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .bounds([0.0, HISTORY_LEN as f64])
+                                .labels(["awal", "sekarang"]);
+                            // Y axis history WiFi TIDAK di-hardcode 0-100 seperti CPU/RAM/Disk,
+                            // karena satuannya Mbps dan bisa jauh lebih tinggi dari 100.
+                            // Dibuat dinamis mengikuti nilai maksimum yang pernah tercatat.
+                            let wifi_y_max = wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
+                            let y_axis = Axis::default()
+                                .title(Span::styled("Mbps", Style::default().fg(Color::DarkGray)))
+                                .bounds([0.0, wifi_y_max])
+                                .labels([
+                                    "0".to_string(),
+                                    format!("{:.0}", wifi_y_max / 2.0),
+                                    format!("{:.0}", wifi_y_max),
+                                ]);
+
+                            let wifi_chart = Chart::new(vec![wifi_dataset])
+                                .block(Block::bordered().title(" History "))
+                                .x_axis(x_axis)
+                                .y_axis(y_axis);
+                            f.render_widget(wifi_chart, detail_rows[1]);
+
+                            let detail_text: Vec<Line> = if let Some(snapshot) = &wifi_snapshot {
+                                vec![
+                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(format!("SSID             : {}", snapshot.soft_ssid)),
+                                    Line::from(format!("Connection type  : {}", snapshot.soft_connection_type)),
+                                    Line::from(format!("Signal strength  : {}%", snapshot.soft_signal_strength)),
+                                    Line::from(format!("IPv4 address     : {}", snapshot.soft_ipv4_address)),
+                                    Line::from(format!("IPv6 address     : {}", snapshot.soft_ipv6_address)),
+                                    Line::from(format!("Adapter          : {}", snapshot.soft_adapter_name)),
+                                    Line::from(""),
+                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(format!("Interface        : {}", snapshot.hard_name_wireless_lan)),
+                                    Line::from(format!("Throughput       : {:.2} Mbps", snapshot.hard_throughput)),
+                                    Line::from(format!("Send (Tx)        : {:.2} Mbps", snapshot.hard_send)),
+                                    Line::from(format!("Receive (Rx)     : {:.2} Mbps", snapshot.hard_receive)),
+                                ]
+                            } else {
+                                vec![Line::from(Span::styled("Menunggu data WiFi pertama...", Style::default().fg(Color::DarkGray)))]
+                            };
+                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            f.render_widget(detail_panel, detail_rows[2]);
                         }
                     }
                 }
