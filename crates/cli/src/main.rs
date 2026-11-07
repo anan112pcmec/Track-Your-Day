@@ -18,7 +18,7 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Gauge, Paragraph},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph},
 };
 use ratatui::symbols::Marker;
 use ratatui::widgets::{Axis, Chart, Dataset, GraphType, List, ListItem};
@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
     let mut perf_menu = PerfMenu::Cpu;
 
     const HISTORY_LEN: usize = 40;
-    let mut window_history: VecDeque<String> = VecDeque::with_capacity(10);
+    let mut window_history: VecDeque<String> = VecDeque::with_capacity(12);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -131,9 +131,9 @@ async fn main() -> Result<()> {
     let mut disk_snapshot: Option<DiskSnapshot> = None;
     let mut wifi_snapshot: Option<WiFiSnapshot> = None;
 
-    // Sesi tracking & state tambahan untuk fitur social-activity
+    // Sesi tracking & state tambahan
     let mut session_start_time = Instant::now();
-    let mut current_session_activity = String::from("Architecture design & system implementation");
+    let mut current_session_activity = String::from("Initializing workspace context");
 
     // 7) MAIN TUI LOOP
     loop {
@@ -155,16 +155,19 @@ async fn main() -> Result<()> {
 
             if fetched_app != running_app {
                 running_app = fetched_app;
-                session_start_time = Instant::now(); // Reset durasi sesi saat aplikasi berganti
-                // Deteksi cerdas aktivitas berdasarkan aplikasi
-                if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
-                    current_session_activity = String::from("Writing Rust/TS code");
-                } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
-                    current_session_activity = String::from("Drafting reports & documentation");
-                } else if running_app.to_lowercase().contains("chrome") || running_app.to_lowercase().contains("firefox") {
-                    current_session_activity = String::from("Researching technical specs");
+                session_start_time = Instant::now();
+                
+                let app_lower = running_app.to_lowercase();
+                if app_lower.contains("code") || app_lower.contains("nvim") || app_lower.contains("cursor") {
+                    current_session_activity = String::from("Writing & compiling code (Rust / TS)");
+                } else if app_lower.contains("excel") || app_lower.contains("word") || app_lower.contains("powerpnt") {
+                    current_session_activity = String::from("Drafting reports & spreadsheet analytics");
+                } else if app_lower.contains("chrome") || app_lower.contains("firefox") || app_lower.contains("msedge") {
+                    current_session_activity = String::from("Web research & technical documentation");
+                } else if app_lower.contains("terminal") || app_lower.contains("iterm") || app_lower.contains("conhost") {
+                    current_session_activity = String::from("Shell execution & system monitoring");
                 } else {
-                    current_session_activity = String::from("General multitasking");
+                    current_session_activity = String::from("General workstation multitasking");
                 }
             }
 
@@ -174,7 +177,7 @@ async fn main() -> Result<()> {
             wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
 
             if window_history.back() != Some(&running_app) {
-                if window_history.len() == 15 {
+                if window_history.len() == 12 {
                     window_history.pop_front();
                 }
                 window_history.push_back(running_app.clone());
@@ -234,13 +237,14 @@ async fn main() -> Result<()> {
         }
 
         terminal.draw(|f| {
+            let size = f.area();
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
                 .constraints([Constraint::Length(3), Constraint::Min(0)])
-                .split(f.area());
+                .split(size);
 
-            // ---------------- TAB BAR ----------------
+            // ---------------- HEADER / TOPBAR ----------------
             let tab_label = |label: &str, is_active: bool| -> Span {
                 if is_active {
                     Span::styled(
@@ -256,179 +260,208 @@ async fn main() -> Result<()> {
             };
             let tabs = Paragraph::new(Line::from(vec![
                 Span::styled(
-                    " TRACK YOUR DAY ",
+                    " ACTIVITY PULSE ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(" │ "),
-                tab_label("Activity", active_tab == ActiveTab::Activity),
-                tab_label("Performance", active_tab == ActiveTab::Performance),
-                Span::raw(" │ "),
+                Span::styled("│", Style::default().fg(Color::DarkGray)),
+                tab_label("Activity Feed", active_tab == ActiveTab::Activity),
+                tab_label("System Metrics", active_tab == ActiveTab::Performance),
+                Span::styled("│", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    "[Tab] Switch View    [q] Quit",
+                    " [Tab] Toggle View   [q] Quit ",
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
-            .block(Block::bordered().border_style(Style::default().fg(Color::DarkGray)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
             f.render_widget(tabs, layout[0]);
 
             match active_tab {
                 ActiveTab::Activity => {
-                    // Professional 3-column Layout
-                    let main_layout = Layout::default()
+                    // Professional 3-Column Asymmetric Dashboard Layout
+                    // Col 1 (30%): Identity & Profile
+                    // Col 2 (45%): Live Focus Session, Context, & Timeline Stream
+                    // Col 3 (25%): Realtime Telemetry & Environment
+                    let cols = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(28),
-                            Constraint::Percentage(44),
-                            Constraint::Percentage(28),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(45),
+                            Constraint::Percentage(25),
                         ])
                         .split(layout[1]);
 
-                    // --- 1. USER PROFILE & IDENTITY ---
-                    let profile_chunks = Layout::default()
+                    // --- COLUMN 1: IDENTITY & PROFILE ---
+                    let left_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(11),
-                            Constraint::Min(0),
+                            Constraint::Length(10), // Profile card
+                            Constraint::Min(0),    // Bio & Philosophy
                         ])
-                        .split(main_layout[0]);
+                        .split(cols[0]);
 
-                    let profile_block = Block::bordered()
-                        .title(Span::styled(" PROFILE ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                    let profile_block = Block::default()
+                        .title(Span::styled(" OPERATOR ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let profile_content = vec![
-                        Line::from(vec![Span::styled("Name    : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex Ratatui", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Phone   : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("Gender  : ", Style::default().fg(Color::DarkGray)), Span::styled("Male", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("IG      : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex.dev", Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("GitHub  : ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alex", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Twitter : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex_rust", Style::default().fg(Color::Blue))]),
+
+                    let profile_text = vec![
+                        Line::from(vec![Span::styled("Name    ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Role    ", Style::default().fg(Color::DarkGray)), Span::styled("Principal Engineer", Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("Contact ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("GitHub  ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alexv", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Network ", Style::default().fg(Color::DarkGray)), Span::styled("IG @alex.dev", Style::default().fg(Color::Magenta))]),
                     ];
-                    f.render_widget(Paragraph::new(profile_content).block(profile_block), profile_chunks[0]);
+                    f.render_widget(Paragraph::new(profile_text).block(profile_block), left_chunks[0]);
 
-                    let bio_block = Block::bordered()
-                        .title(Span::styled(" BIO & STATUS ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                    let bio_block = Block::default()
+                        .title(Span::styled(" MANIFESTO ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let bio_content = vec![
-                        Line::from(Span::styled("\"Building robust systems & shipping clean Rust code daily.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
+
+                    let bio_text = vec![
+                        Line::from(Span::styled("“Low latency, high throughput, zero friction engineering.”", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
                         Line::from(""),
                         Line::from(vec![
-                            Span::styled("STATE: ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("DEEP FOCUS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                            Span::styled("STATUS  ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("ACTIVE / FOCUSED", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                         ]),
                     ];
-                    f.render_widget(Paragraph::new(bio_content).block(bio_block), profile_chunks[1]);
+                    f.render_widget(Paragraph::new(bio_text).block(bio_block), left_chunks[1]);
 
-                    // --- 2. ACTIVE SESSION & WORK INSIGHTS ---
-                    let session_chunks = Layout::default()
+                    // --- COLUMN 2: LIVE SESSION, CONTEXT & TIMELINE ---
+                    let mid_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(8),
-                            Constraint::Length(7),
-                            Constraint::Min(0),
+                            Constraint::Length(7),  // Current Focus Session
+                            Constraint::Length(6),  // Developer / Office Insight
+                            Constraint::Min(0),     // Timeline Stream
                         ])
-                        .split(main_layout[1]);
+                        .split(cols[1]);
 
-                    let session_duration = session_start_time.elapsed().as_secs();
-                    let session_time_str = format!(
+                    let session_dur = session_start_time.elapsed().as_secs();
+                    let dur_str = format!(
                         "{:02}:{:02}:{:02}",
-                        session_duration / 3600,
-                        (session_duration % 3600) / 60,
-                        session_duration % 60
+                        session_dur / 3600,
+                        (session_dur % 3600) / 60,
+                        session_dur % 60
                     );
 
-                    let current_session_block = Block::bordered()
-                        .title(Span::styled(" CURRENT SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+                    let session_block = Block::default()
+                        .title(Span::styled(" CURRENT FOCUS SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let current_session_content = vec![
-                        Line::from(vec![Span::styled("App     : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Duration: ", Style::default().fg(Color::DarkGray)), Span::styled(session_time_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Activity: ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
-                    ];
-                    f.render_widget(Paragraph::new(current_session_content).block(current_session_block), session_chunks[0]);
 
-                    let special_status_block = Block::bordered()
-                        .title(Span::styled(" CONTEXT & INSIGHT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                    let session_text = vec![
+                        Line::from(vec![Span::styled("Target App : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Duration   : ", Style::default().fg(Color::DarkGray)), Span::styled(dur_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Activity   : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
+                    ];
+                    f.render_widget(Paragraph::new(session_text).block(session_block), mid_chunks[0]);
+
+                    let insight_block = Block::default()
+                        .title(Span::styled(" WORKLOAD CONTEXT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let special_content = if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
+
+                    let app_l = running_app.to_lowercase();
+                    let insight_text = if app_l.contains("code") || app_l.contains("nvim") || app_l.contains("cursor") {
                         vec![
-                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("IDE / Code Editor", Style::default().fg(Color::Green))]),
-                            Line::from(vec![Span::styled("Primary Lang: ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("Active compilation & test suite", Style::default().fg(Color::Yellow))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Software Architecture (IDE)", Style::default().fg(Color::Green))]),
+                            Line::from(vec![Span::styled("Language : ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript [Active]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
                         ]
-                    } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
+                    } else if app_l.contains("excel") || app_l.contains("word") || app_l.contains("powerpnt") {
                         vec![
-                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("Office / Productivity Suite", Style::default().fg(Color::Blue))]),
-                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("Data analysis & reporting", Style::default().fg(Color::White))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Corporate / Formal Productivity", Style::default().fg(Color::Blue))]),
+                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Documentation & Quantitative Analysis", Style::default().fg(Color::White))]),
                         ]
                     } else {
                         vec![
-                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation", Style::default().fg(Color::DarkGray))]),
-                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("General browsing / utilities", Style::default().fg(Color::DarkGray))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation Task", Style::default().fg(Color::DarkGray))]),
+                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Browsing & Multi-utility switching", Style::default().fg(Color::DarkGray))]),
                         ]
                     };
-                    f.render_widget(Paragraph::new(special_content).block(special_status_block), session_chunks[1]);
+                    f.render_widget(Paragraph::new(insight_text).block(insight_block), mid_chunks[1]);
 
-                    let timeline_block = Block::bordered()
-                        .title(Span::styled(" SESSION HISTORY ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                    let timeline_block = Block::default()
+                        .title(Span::styled(" SESSION TIMELINE STREAM ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
+
                     let timeline_items: Vec<ListItem> = window_history
                         .iter()
                         .rev()
                         .enumerate()
-                        .map(|(idx, app)| {
-                            let prefix = if idx == 0 { "> " } else { "  " };
-                            let style = if idx == 0 {
+                        .map(|(i, app)| {
+                            let indicator = if i == 0 { "▸ " } else { "  " };
+                            let style = if i == 0 {
                                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default().fg(Color::DarkGray)
                             };
                             ListItem::new(Line::from(vec![
-                                Span::styled(prefix, Style::default().fg(Color::Cyan)),
+                                Span::styled(indicator, Style::default().fg(Color::Cyan)),
                                 Span::styled(app.clone(), style),
                             ]))
                         })
                         .collect();
-                    f.render_widget(List::new(timeline_items).block(timeline_block), session_chunks[2]);
+                    f.render_widget(List::new(timeline_items).block(timeline_block), mid_chunks[2]);
 
-                    // --- 3. METRICS & ENVIRONMENT ---
-                    let metrics_chunks = Layout::default()
+                    // --- COLUMN 3: TELEMETRY & ENVIRONMENT ---
+                    let right_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(8),
-                            Constraint::Min(0),
+                            Constraint::Length(7),  // Typing Telemetry
+                            Constraint::Min(0),     // System Environment
                         ])
-                        .split(main_layout[2]);
+                        .split(cols[2]);
 
-                    let typing_block = Block::bordered()
-                        .title(Span::styled(" TYPING METRICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                    let typing_block = Block::default()
+                        .title(Span::styled(" TYPING DYNAMICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let typing_content = vec![
-                        Line::from(vec![Span::styled("Speed   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Accuracy: ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [Optimal]", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Raw CPM : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} chars/min", wpm_score * 5), Style::default().fg(Color::White))]),
-                    ];
-                    f.render_widget(Paragraph::new(typing_content).block(typing_block), metrics_chunks[0]);
 
-                    let sys_env_block = Block::bordered()
+                    let typing_text = vec![
+                        Line::from(vec![Span::styled("Speed    ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Accuracy ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [High]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Raw Rate ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
+                    ];
+                    f.render_widget(Paragraph::new(typing_text).block(typing_block), right_chunks[0]);
+
+                    let env_block = Block::default()
                         .title(Span::styled(" ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-                    let wifi_ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Not connected".to_string());
-                    let wifi_tp = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
-                    let sys_env_content = vec![
-                        Line::from(vec![Span::styled("Battery : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [Charging]", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Network : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_ssid, Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("Bandwidth: ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_tp, Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("Audio   : ", Style::default().fg(Color::DarkGray)), Span::styled("Active [65%]", Style::default().fg(Color::Yellow))]),
+
+                    let ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Offline".to_string());
+                    let bw = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
+                    
+                    let env_text = vec![
+                        Line::from(vec![Span::styled("Battery  ", Style::default().fg(Color::DarkGray)), Span::styled("85% [AC Power]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Network  ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("Throughput", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("Audio    ", Style::default().fg(Color::DarkGray)), Span::styled("Active [65%]", Style::default().fg(Color::Yellow))]),
                     ];
-                    f.render_widget(Paragraph::new(sys_env_content).block(sys_env_block), metrics_chunks[1]);
+                    f.render_widget(Paragraph::new(env_text).block(env_block), right_chunks[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+                        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
                         .split(layout[1]);
 
-                    // ---------------- KIRI (30%): daftar util yang bisa dipilih ----------------
+                    // ---------------- KIRI: MENU UTILITAS ----------------
                     let menu_style = |item: PerfMenu| -> Style {
                         if perf_menu == item {
                             Style::default()
@@ -439,9 +472,9 @@ async fn main() -> Result<()> {
                             Style::default().fg(Color::White)
                         }
                     };
-                    let arrow = |item: PerfMenu| -> &'static str {
+                    let indicator = |item: PerfMenu| -> &'static str {
                         if perf_menu == item {
-                            "> "
+                            "▸ "
                         } else {
                             "  "
                         }
@@ -449,26 +482,32 @@ async fn main() -> Result<()> {
 
                     let menu_items = vec![
                         Line::from(Span::styled(
-                            format!("{}CPU        ", arrow(PerfMenu::Cpu)),
+                            format!("{}CPU Subsystem ", indicator(PerfMenu::Cpu)),
                             menu_style(PerfMenu::Cpu),
                         )),
                         Line::from(Span::styled(
-                            format!("{}Memory     ", arrow(PerfMenu::Memory)),
+                            format!("{}Memory (RAM)  ", indicator(PerfMenu::Memory)),
                             menu_style(PerfMenu::Memory),
                         )),
                         Line::from(Span::styled(
-                            format!("{}Disk       ", arrow(PerfMenu::Disk)),
+                            format!("{}Storage I/O   ", indicator(PerfMenu::Disk)),
                             menu_style(PerfMenu::Disk),
                         )),
                         Line::from(Span::styled(
-                            format!("{}WiFi       ", arrow(PerfMenu::Wifi)),
+                            format!("{}Wireless LAN  ", indicator(PerfMenu::Wifi)),
                             menu_style(PerfMenu::Wifi),
                         )),
                     ];
-                    let menu = Paragraph::new(menu_items).block(Block::bordered().title(" Utilities ").border_style(Style::default().fg(Color::DarkGray)));
+                    let menu = Paragraph::new(menu_items).block(
+                        Block::default()
+                            .title(Span::styled(" Subsystems ", Style::default().fg(Color::Cyan)))
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(Style::default().fg(Color::DarkGray)),
+                    );
                     f.render_widget(menu, sections[0]);
 
-                    // ---------------- KANAN (70%): detail sesuai menu yang dipilih ----------------
+                    // ---------------- KANAN: DETAIL & GRAFIK ----------------
                     match perf_menu {
                         PerfMenu::Cpu => {
                             let detail_rows = Layout::default()
@@ -483,7 +522,13 @@ async fn main() -> Result<()> {
                             let usage_percent =
                                 cpu_snapshot.as_ref().map(|s| s.soft_utilization).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" CPU Usage ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" CPU Utilization ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .gauge_style(Style::default().fg(Color::Cyan))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -503,16 +548,22 @@ async fn main() -> Result<()> {
                                 .data(&cpu_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Timeline", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["start", "now"]);
+                                .labels(["past", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Load", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
-                                .labels(["0", "50", "100"]);
+                                .labels(["0%", "50%", "100%"]);
 
                             let cpu_chart = Chart::new(vec![cpu_dataset])
-                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Historical Trend ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(cpu_chart, detail_rows[1]);
@@ -520,64 +571,33 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &cpu_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (Live)",
+                                        "Software Telemetry",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!("Processes        : {}", snapshot.soft_processes)),
-                                    Line::from(format!("Threads          : {}", snapshot.soft_threads)),
-                                    Line::from(format!("Handles          : {}", snapshot.soft_handles)),
-                                    Line::from(format!(
-                                        "Current speed    : {:.0} MHz",
-                                        snapshot.soft_speed_clock
-                                    )),
-                                    Line::from(format!("Uptime           : {}", snapshot.soft_uptime)),
+                                    Line::from(format!("Active Processes : {}", snapshot.soft_processes)),
+                                    Line::from(format!("Active Threads   : {}", snapshot.soft_threads)),
+                                    Line::from(format!("Clock Speed      : {:.0} MHz", snapshot.soft_speed_clock)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (Static)",
+                                        "Hardware Specs",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!(
-                                        "Base speed       : {:.0} MHz",
-                                        snapshot.hard_base_speed
-                                    )),
-                                    Line::from(format!("Sockets          : {}", snapshot.hard_sockets)),
-                                    Line::from(format!("Cores            : {}", snapshot.hard_cores)),
-                                    Line::from(format!(
-                                        "Logical procs    : {}",
-                                        snapshot.hard_logical_processors
-                                    )),
-                                    Line::from(format!(
-                                        "Virtualization   : {}",
-                                        if snapshot.hard_virtualization {
-                                            "Enabled"
-                                        } else {
-                                            "Disabled"
-                                        }
-                                    )),
-                                    Line::from(format!(
-                                        "L1 cache         : {:.0} KB",
-                                        snapshot.hard_l1_cache
-                                    )),
-                                    Line::from(format!(
-                                        "L2 cache         : {:.0} KB",
-                                        snapshot.hard_l2_cache
-                                    )),
-                                    Line::from(format!(
-                                        "L3 cache         : {:.0} KB",
-                                        snapshot.hard_l3_cache
-                                    )),
+                                    Line::from(format!("Base Clock       : {:.0} MHz", snapshot.hard_base_speed)),
+                                    Line::from(format!("Cores / Threads  : {} / {}", snapshot.hard_cores, snapshot.hard_logical_processors)),
+                                    Line::from(format!("Virtualization   : {}", if snapshot.hard_virtualization { "Enabled" } else { "Disabled" })),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled(
-                                    "Awaiting CPU metrics...",
-                                    Style::default().fg(Color::DarkGray),
-                                ))]
+                                vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
-                            let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
+                            let detail_panel = Paragraph::new(detail_text).block(
+                                Block::default()
+                                    .title(" Specifications ")
+                                    .borders(Borders::ALL)
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::DarkGray)),
+                            );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
-
                         PerfMenu::Memory => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
@@ -599,7 +619,13 @@ async fn main() -> Result<()> {
                                 })
                                 .unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" RAM Usage ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" RAM Utilization ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .gauge_style(Style::default().fg(Color::Green))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -619,16 +645,22 @@ async fn main() -> Result<()> {
                                 .data(&ram_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Timeline", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["start", "now"]);
+                                .labels(["past", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Load", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
-                                .labels(["0", "50", "100"]);
+                                .labels(["0%", "50%", "100%"]);
 
                             let ram_chart = Chart::new(vec![ram_dataset])
-                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Historical Trend ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(ram_chart, detail_rows[1]);
@@ -636,65 +668,33 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &ram_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (Live)",
+                                        "Software Telemetry",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!("In use           : {:.2} GB", snapshot.soft_in_use)),
-                                    Line::from(format!(
-                                        "Available        : {:.2} GB",
-                                        snapshot.soft_available
-                                    )),
-                                    Line::from(format!(
-                                        "Hardware reserved: {:.2} GB",
-                                        snapshot.soft_hardware_reserve
-                                    )),
-                                    Line::from(format!(
-                                        "Committed in use : {:.2} GB",
-                                        snapshot.soft_in_commited
-                                    )),
-                                    Line::from(format!(
-                                        "Committed avail  : {:.2} GB",
-                                        snapshot.soft_available_commited
-                                    )),
-                                    Line::from(format!("Cached           : {:.2} GB", snapshot.soft_cached)),
-                                    Line::from(format!(
-                                        "Paged pool       : {:.2} GB",
-                                        snapshot.soft_page_pool
-                                    )),
-                                    Line::from(format!(
-                                        "Non-paged pool   : {:.2} GB",
-                                        snapshot.soft_non_paged_pool
-                                    )),
+                                    Line::from(format!("In Use           : {:.2} GB", snapshot.soft_in_use)),
+                                    Line::from(format!("Available        : {:.2} GB", snapshot.soft_available)),
+                                    Line::from(format!("Committed        : {:.2} GB", snapshot.soft_in_commited)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (Static)",
+                                        "Hardware Specs",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!(
-                                        "Capacity         : {:.2} GB",
-                                        snapshot.hard_capacity
-                                    )),
-                                    Line::from(format!("Speed            : {} MHz", snapshot.hard_speed)),
-                                    Line::from(format!(
-                                        "Slots used       : {}",
-                                        snapshot.hard_slots_used
-                                    )),
-                                    Line::from(format!(
-                                        "Form factor      : {}",
-                                        snapshot.hard_form_factor
-                                    )),
+                                    Line::from(format!("Total Capacity   : {:.2} GB", snapshot.hard_capacity)),
+                                    Line::from(format!("Memory Speed     : {} MHz", snapshot.hard_speed)),
+                                    Line::from(format!("Slots Used       : {}", snapshot.hard_slots_used)),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled(
-                                    "Awaiting RAM metrics...",
-                                    Style::default().fg(Color::DarkGray),
-                                ))]
+                                vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
-                            let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
+                            let detail_panel = Paragraph::new(detail_text).block(
+                                Block::default()
+                                    .title(" Specifications ")
+                                    .borders(Borders::ALL)
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::DarkGray)),
+                            );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
-
                         PerfMenu::Disk => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
@@ -708,7 +708,13 @@ async fn main() -> Result<()> {
                             let usage_percent =
                                 disk_snapshot.as_ref().map(|s| s.soft_active_time).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" Disk Active Time ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Disk Active Time ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .gauge_style(Style::default().fg(Color::Yellow))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -728,16 +734,22 @@ async fn main() -> Result<()> {
                                 .data(&disk_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Timeline", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["start", "now"]);
+                                .labels(["past", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Load", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
-                                .labels(["0", "50", "100"]);
+                                .labels(["0%", "50%", "100%"]);
 
                             let disk_chart = Chart::new(vec![disk_dataset])
-                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Historical Trend ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(disk_chart, detail_rows[1]);
@@ -745,56 +757,32 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &disk_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (Live)",
+                                        "Software Telemetry",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!(
-                                        "Active time      : {:.1}%",
-                                        snapshot.soft_active_time
-                                    )),
-                                    Line::from(format!(
-                                        "Read speed       : {:.2} MB/s",
-                                        snapshot.soft_read_speed
-                                    )),
-                                    Line::from(format!(
-                                        "Write speed      : {:.2} MB/s",
-                                        snapshot.soft_write_speed
-                                    )),
-                                    Line::from(format!(
-                                        "Avg response time: {:.2} ms",
-                                        snapshot.soft_average_response_time
-                                    )),
+                                    Line::from(format!("Read Speed       : {:.2} MB/s", snapshot.soft_read_speed)),
+                                    Line::from(format!("Write Speed      : {:.2} MB/s", snapshot.soft_write_speed)),
+                                    Line::from(format!("Avg Response     : {:.2} ms", snapshot.soft_average_response_time)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (Static)",
+                                        "Hardware Specs",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Capacity         : {} GB", snapshot.hard_capacity)),
-                                    Line::from(format!(
-                                        "Formatted        : {} GB",
-                                        snapshot.hard_formatted
-                                    )),
-                                    Line::from(format!(
-                                        "System disk      : {}",
-                                        if snapshot.hard_system_disk {
-                                            "Yes"
-                                        } else {
-                                            "No"
-                                        }
-                                    )),
-                                    Line::from(format!("Type             : {}", snapshot.hard_type)),
+                                    Line::from(format!("Disk Type        : {}", snapshot.hard_type)),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled(
-                                    "Awaiting Disk metrics...",
-                                    Style::default().fg(Color::DarkGray),
-                                ))]
+                                vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
-                            let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
+                            let detail_panel = Paragraph::new(detail_text).block(
+                                Block::default()
+                                    .title(" Specifications ")
+                                    .borders(Borders::ALL)
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::DarkGray)),
+                            );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
-
                         PerfMenu::Wifi => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
@@ -807,11 +795,15 @@ async fn main() -> Result<()> {
 
                             let throughput =
                                 wifi_snapshot.as_ref().map(|s| s.hard_throughput).unwrap_or(0.0);
-                            const THROUGHPUT_MAX: f32 = 100.0;
-                            let gauge_percent =
-                                ((throughput / THROUGHPUT_MAX) * 100.0).clamp(0.0, 100.0);
+                            let gauge_percent = ((throughput / 100.0) * 100.0).clamp(0.0, 100.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" WiFi Throughput ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Wireless Throughput ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .gauge_style(Style::default().fg(Color::Magenta))
                                 .percent(gauge_percent.round() as u16)
                                 .label(format!("{throughput:.1} Mbps"));
@@ -824,29 +816,29 @@ async fn main() -> Result<()> {
                                 .collect();
 
                             let wifi_dataset = Dataset::default()
-                                .name("Throughput (Mbps)")
+                                .name("Mbps")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
                                 .style(Style::default().fg(Color::Magenta))
                                 .data(&wifi_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Timeline", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["start", "now"]);
-                            let wifi_y_max =
-                                wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
+                                .labels(["past", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Mbps", Style::default().fg(Color::DarkGray)))
-                                .bounds([0.0, wifi_y_max])
-                                .labels([
-                                    "0".to_string(),
-                                    format!("{:.0}", wifi_y_max / 2.0),
-                                    format!("{:.0}", wifi_y_max),
-                                ]);
+                                .title(Span::styled("Throughput", Style::default().fg(Color::DarkGray)))
+                                .bounds([0.0, 100.0])
+                                .labels(["0", "50", "100"]);
 
                             let wifi_chart = Chart::new(vec![wifi_dataset])
-                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
+                                .block(
+                                    Block::default()
+                                        .title(" Historical Trend ")
+                                        .borders(Borders::ALL)
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(wifi_chart, detail_rows[1]);
@@ -854,57 +846,30 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &wifi_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (Live)",
+                                        "Software Telemetry",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("SSID             : {}", snapshot.soft_ssid)),
-                                    Line::from(format!(
-                                        "Connection type  : {}",
-                                        snapshot.soft_connection_type
-                                    )),
-                                    Line::from(format!(
-                                        "Signal strength  : {}%",
-                                        snapshot.soft_signal_strength
-                                    )),
-                                    Line::from(format!(
-                                        "IPv4 address     : {}",
-                                        snapshot.soft_ipv4_address
-                                    )),
-                                    Line::from(format!(
-                                        "IPv6 address     : {}",
-                                        snapshot.soft_ipv6_address
-                                    )),
-                                    Line::from(format!("Adapter          : {}", snapshot.soft_adapter_name)),
+                                    Line::from(format!("IPv4 Address     : {}", snapshot.soft_ipv4_address)),
+                                    Line::from(format!("Signal Strength  : {}%", snapshot.soft_signal_strength)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (Static)",
+                                        "Hardware Specs",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
-                                    Line::from(format!(
-                                        "Interface        : {}",
-                                        snapshot.hard_name_wireless_lan
-                                    )),
-                                    Line::from(format!(
-                                        "Throughput       : {:.2} Mbps",
-                                        snapshot.hard_throughput
-                                    )),
-                                    Line::from(format!(
-                                        "Send (Tx)        : {:.2} Mbps",
-                                        snapshot.hard_send
-                                    )),
-                                    Line::from(format!(
-                                        "Receive (Rx)     : {:.2} Mbps",
-                                        snapshot.hard_receive
-                                    )),
+                                    Line::from(format!("Adapter Interface: {}", snapshot.hard_name_wireless_lan)),
+                                    Line::from(format!("Tx / Rx Speed    : {:.2} / {:.2} Mbps", snapshot.hard_send, snapshot.hard_receive)),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled(
-                                    "Awaiting WiFi metrics...",
-                                    Style::default().fg(Color::DarkGray),
-                                ))]
+                                vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
-                            let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
+                            let detail_panel = Paragraph::new(detail_text).block(
+                                Block::default()
+                                    .title(" Specifications ")
+                                    .borders(Borders::ALL)
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::DarkGray)),
+                            );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
                     }
@@ -915,7 +880,6 @@ async fn main() -> Result<()> {
         // Tangani event keyboard secara non-blocking
         while event::poll(Duration::from_millis(0))? {
             if let Event::Key(key) = event::read()? {
-                // HANYA proses saat key ditekan (mengabaikan release & repeat untuk mencegah bug loncat 2x)
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
@@ -948,5 +912,4 @@ async fn main() -> Result<()> {
         reactive_handle.abort();
         Ok(())
     }
-    
 }
