@@ -540,11 +540,11 @@ pub struct DiskUtilData {
 
 impl DiskUtilData {
     pub fn new() -> Self {
-        DiskUtilData {
+        let mut data = DiskUtilData {
             hard_capacity: 0,
             hard_formatted: 0,
             hard_system_disk: true,
-            hard_type: TypeDisk::HDD("Unknown".to_string()),
+            hard_type: TypeDisk::SSD("PhysicalDrive0".to_string()),
             hard_capacity_in_use: 0,
 
             soft_read_speed: 0.0,
@@ -560,17 +560,40 @@ impl DiskUtilData {
             last_read_count: 0,
             last_write_count: 0,
             last_query_time: 0,
-        }
+        };
+        data.update();
+        data
     }
 
     pub fn update(&mut self) {
+        // Fallback aman menggunakan GetDiskFreeSpaceExW pada drive C: agar kapasitas selalu terisi meskipun tanpa admin rights.
+        unsafe {
+            let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
+            let mut total_bytes: u64 = 0;
+            let mut free_bytes: u64 = 0;
+            if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(system_drive.as_ptr()),
+                None,
+                Some(&mut total_bytes),
+                Some(&mut free_bytes),
+            )
+            .is_ok()
+            {
+                let total_mb = (total_bytes / (1024 * 1024)) as u32;
+                let free_mb = (free_bytes / (1024 * 1024)) as u32;
+                self.hard_capacity = total_mb;
+                self.hard_formatted = total_mb;
+                self.hard_capacity_in_use = total_mb.saturating_sub(free_mb);
+            }
+        }
+
+        // Coba akses PhysicalDrive0 untuk performa dan tipe disk (jika hak akses mencukupi)
         let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
 
         unsafe {
-            // Fix: Gunakan 0x80000000 (GENERIC_READ) agar DeviceIoControl tidak gagal akses (Access Denied / 0)
             let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
                 windows::core::PCWSTR(drive_path.as_ptr()),
-                0x80000000, // GENERIC_READ
+                windows::Win32::Storage::FileSystem::FILE_GENERIC_READ.0,
                 windows::Win32::Storage::FileSystem::FILE_SHARE_READ
                     | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
                 None,
@@ -684,29 +707,11 @@ impl DiskUtilData {
                     None,
                 );
 
-                if length_result.is_ok() {
+                if length_result.is_ok() && length_info.Length > 0 {
                     self.hard_capacity = (length_info.Length / (1024 * 1024)) as u32;
                 }
 
                 let _ = windows::Win32::Foundation::CloseHandle(handle);
-            }
-        }
-
-        unsafe {
-            let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
-            let mut total_bytes: u64 = 0;
-            let mut free_bytes: u64 = 0;
-            if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-                windows::core::PCWSTR(system_drive.as_ptr()),
-                None,
-                Some(&mut total_bytes),
-                Some(&mut free_bytes),
-            )
-            .is_ok()
-            {
-                self.hard_formatted = (total_bytes / (1024 * 1024)) as u32;
-                self.hard_capacity_in_use =
-                    ((total_bytes.saturating_sub(free_bytes)) / (1024 * 1024)) as u32;
             }
         }
     }
