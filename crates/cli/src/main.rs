@@ -133,13 +133,13 @@ async fn main() -> Result<()> {
 
     // Sesi tracking & state tambahan untuk fitur social-activity
     let mut session_start_time = Instant::now();
-    let mut current_session_activity = String::from("Menulis kode & eksplorasi arsitektur");
+    let mut current_session_activity = String::from("Architecture design & system implementation");
 
     // 7) MAIN TUI LOOP
     loop {
         render_interval.tick().await;
 
-        let uptime_secs = start_time.elapsed().as_secs();
+        let _uptime_secs = start_time.elapsed().as_secs();
 
         // Refresh data dari database setiap 500ms
         if last_fetch_time.elapsed() >= Duration::from_millis(500) {
@@ -158,13 +158,13 @@ async fn main() -> Result<()> {
                 session_start_time = Instant::now(); // Reset durasi sesi saat aplikasi berganti
                 // Deteksi cerdas aktivitas berdasarkan aplikasi
                 if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
-                    current_session_activity = String::from("Coding (Rust/TypeScript)");
+                    current_session_activity = String::from("Writing Rust/TS code");
                 } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
-                    current_session_activity = String::from("Pekerjaan Formal / Dokumen Kantor");
+                    current_session_activity = String::from("Drafting reports & documentation");
                 } else if running_app.to_lowercase().contains("chrome") || running_app.to_lowercase().contains("firefox") {
-                    current_session_activity = String::from("Browsing / Riset & Dokumentasi");
+                    current_session_activity = String::from("Researching technical specs");
                 } else {
-                    current_session_activity = String::from("Eksplorasi Umum / Multitasking");
+                    current_session_activity = String::from("General multitasking");
                 }
             }
 
@@ -256,7 +256,7 @@ async fn main() -> Result<()> {
             };
             let tabs = Paragraph::new(Line::from(vec![
                 Span::styled(
-                    " track your day ",
+                    " TRACK YOUR DAY ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" │ "),
@@ -264,69 +264,67 @@ async fn main() -> Result<()> {
                 tab_label("Performance", active_tab == ActiveTab::Performance),
                 Span::raw(" │ "),
                 Span::styled(
-                    "[Tab] switch tab   [q] exit",
+                    "[Tab] Switch View    [q] Quit",
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
-            .block(Block::bordered());
+            .block(Block::bordered().border_style(Style::default().fg(Color::DarkGray)));
             f.render_widget(tabs, layout[0]);
 
             match active_tab {
                 ActiveTab::Activity => {
-                    // Layout 3 Kolom untuk Social-Activity Dashboard
-                    // Kolom 1 (30%): Profil & Identitas User
-                    // Kolom 2 (40%): Live Sesi Aplikasi, Konteks Kerja, & Detail Coding/Office
-                    // Kolom 3 (30%): General Status (Baterai, WiFi, Audio, WPM & Akurasi)
+                    // Professional 3-column Layout
                     let main_layout = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(30),
-                            Constraint::Percentage(40),
-                            Constraint::Percentage(30),
+                            Constraint::Percentage(28),
+                            Constraint::Percentage(44),
+                            Constraint::Percentage(28),
                         ])
                         .split(layout[1]);
 
-                    // --- 1. PROFIL & IDENTITAS PENGGUNA ---
+                    // --- 1. USER PROFILE & IDENTITY ---
                     let profile_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(11), // Info Pribadi & Kontak
-                            Constraint::Min(0),    // Bio & Motivasi
+                            Constraint::Length(11),
+                            Constraint::Min(0),
                         ])
                         .split(main_layout[0]);
 
-                    let profile_block = Block::bordered().title(Span::styled(
-                        " User Profile ",
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                    ));
+                    let profile_block = Block::bordered()
+                        .title(Span::styled(" PROFILE ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let profile_content = vec![
-                        Line::from(vec![Span::styled("👤 Nama : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex Ratatui", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("📞 Telp : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("⚥ Genders: ", Style::default().fg(Color::DarkGray)), Span::styled("Laki-laki", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("📸 IG   : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex.dev", Style::default().fg(Color::Magenta))]),
-                        Line::from(vec![Span::styled("🐙 GH   : ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alex", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("📘 FB   : ", Style::default().fg(Color::DarkGray)), Span::styled("fb.com/alex.dev", Style::default().fg(Color::Blue))]),
+                        Line::from(vec![Span::styled("Name    : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex Ratatui", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Phone   : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("Gender  : ", Style::default().fg(Color::DarkGray)), Span::styled("Male", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("IG      : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex.dev", Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("GitHub  : ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alex", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Twitter : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex_rust", Style::default().fg(Color::Blue))]),
                     ];
                     f.render_widget(Paragraph::new(profile_content).block(profile_block), profile_chunks[0]);
 
-                    let bio_block = Block::bordered().title(Span::styled(
-                        " Bio & Motivasi ",
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                    ));
+                    let bio_block = Block::bordered()
+                        .title(Span::styled(" BIO & STATUS ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let bio_content = vec![
-                        Line::from(Span::styled("“Building robust systems & shipping clean Rust code every single day.”", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
+                        Line::from(Span::styled("\"Building robust systems & shipping clean Rust code daily.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
                         Line::from(""),
-                        Line::from(Span::styled("Status: 🚀 Deep Focus Mode", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+                        Line::from(vec![
+                            Span::styled("STATE: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("DEEP FOCUS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                        ]),
                     ];
                     f.render_widget(Paragraph::new(bio_content).block(bio_block), profile_chunks[1]);
 
-                    // --- 2. SESI APLIKASI & KONTEKS KERJA / DEV ---
+                    // --- 2. ACTIVE SESSION & WORK INSIGHTS ---
                     let session_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(8),  // Sesi Aplikasi Saat Ini & Durasi
-                            Constraint::Length(7),  // Khusus Developer / Office Status
-                            Constraint::Min(0),     // Timeline / Riwayat Sesi
+                            Constraint::Length(8),
+                            Constraint::Length(7),
+                            Constraint::Min(0),
                         ])
                         .split(main_layout[1]);
 
@@ -338,51 +336,47 @@ async fn main() -> Result<()> {
                         session_duration % 60
                     );
 
-                    let current_session_block = Block::bordered().title(Span::styled(
-                        " Active Session Context ",
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                    ));
+                    let current_session_block = Block::bordered()
+                        .title(Span::styled(" CURRENT SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let current_session_content = vec![
-                        Line::from(vec![Span::styled("💻 App: ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("⏱️ Durasi Sesi: ", Style::default().fg(Color::DarkGray)), Span::styled(session_time_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("🎯 Aktivitas: ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("App     : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Duration: ", Style::default().fg(Color::DarkGray)), Span::styled(session_time_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Activity: ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
                     ];
                     f.render_widget(Paragraph::new(current_session_content).block(current_session_block), session_chunks[0]);
 
-                    // Khusus Developer (VS Code/Nvim) atau Office (Excel/Word)
-                    let special_status_block = Block::bordered().title(Span::styled(
-                        " Work & Code Insight ",
-                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-                    ));
+                    let special_status_block = Block::bordered()
+                        .title(Span::styled(" CONTEXT & INSIGHT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let special_content = if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
                         vec![
-                            Line::from(vec![Span::styled("🛠️ Mode: ", Style::default().fg(Color::DarkGray)), Span::styled("Software Development (IDE)", Style::default().fg(Color::Green))]),
-                            Line::from(vec![Span::styled("🔤 Bahasa Utama: ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-                            Line::from(vec![Span::styled("📦 Status Project: ", Style::default().fg(Color::DarkGray)), Span::styled("Compiling & Testing...", Style::default().fg(Color::Yellow))]),
+                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("IDE / Code Editor", Style::default().fg(Color::Green))]),
+                            Line::from(vec![Span::styled("Primary Lang: ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("Active compilation & test suite", Style::default().fg(Color::Yellow))]),
                         ]
                     } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
                         vec![
-                            Line::from(vec![Span::styled("📊 Mode: ", Style::default().fg(Color::DarkGray)), Span::styled("Formal Office / Dokumen", Style::default().fg(Color::Blue))]),
-                            Line::from(vec![Span::styled("📋 Status Kerja: ", Style::default().fg(Color::DarkGray)), Span::styled("Menyusun Laporan & Analisis", Style::default().fg(Color::White))]),
+                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("Office / Productivity Suite", Style::default().fg(Color::Blue))]),
+                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("Data analysis & reporting", Style::default().fg(Color::White))]),
                         ]
                     } else {
                         vec![
-                            Line::from(vec![Span::styled("🌐 Status: ", Style::default().fg(Color::DarkGray)), Span::styled("General Activity / Multitasking", Style::default().fg(Color::DarkGray))]),
+                            Line::from(vec![Span::styled("Environment : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation", Style::default().fg(Color::DarkGray))]),
+                            Line::from(vec![Span::styled("Task Status : ", Style::default().fg(Color::DarkGray)), Span::styled("General browsing / utilities", Style::default().fg(Color::DarkGray))]),
                         ]
                     };
                     f.render_widget(Paragraph::new(special_content).block(special_status_block), session_chunks[1]);
 
-                    // Timeline Riwayat Aplikasi
-                    let timeline_block = Block::bordered().title(Span::styled(
-                        " Session History Stream ",
-                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                    ));
+                    let timeline_block = Block::bordered()
+                        .title(Span::styled(" SESSION HISTORY ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let timeline_items: Vec<ListItem> = window_history
                         .iter()
                         .rev()
                         .enumerate()
                         .map(|(idx, app)| {
-                            let prefix = if idx == 0 { "▶ " } else { "  " };
+                            let prefix = if idx == 0 { "> " } else { "  " };
                             let style = if idx == 0 {
                                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
                             } else {
@@ -396,37 +390,35 @@ async fn main() -> Result<()> {
                         .collect();
                     f.render_widget(List::new(timeline_items).block(timeline_block), session_chunks[2]);
 
-                    // --- 3. GENERAL HARDWARE & METRICS (BATTERY, WIFI, AUDIO, WPM, AKURASI) ---
+                    // --- 3. METRICS & ENVIRONMENT ---
                     let metrics_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(8),  // WPM & Typing Accuracy
-                            Constraint::Min(0),     // System Environment (Battery, WiFi, Audio)
+                            Constraint::Length(8),
+                            Constraint::Min(0),
                         ])
                         .split(main_layout[2]);
 
-                    let typing_block = Block::bordered().title(Span::styled(
-                        " Typing Performance ",
-                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-                    ));
+                    let typing_block = Block::bordered()
+                        .title(Span::styled(" TYPING METRICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let typing_content = vec![
-                        Line::from(vec![Span::styled("⚡ Kecepatan: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("🎯 Akurasi  : ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% (High)", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("⌨️ Raw Speed: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("Speed   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Accuracy: ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [Optimal]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Raw CPM : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} chars/min", wpm_score * 5), Style::default().fg(Color::White))]),
                     ];
                     f.render_widget(Paragraph::new(typing_content).block(typing_block), metrics_chunks[0]);
 
-                    let sys_env_block = Block::bordered().title(Span::styled(
-                        " System Environment ",
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                    ));
+                    let sys_env_block = Block::bordered()
+                        .title(Span::styled(" ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .border_style(Style::default().fg(Color::DarkGray));
                     let wifi_ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Not connected".to_string());
                     let wifi_tp = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
                     let sys_env_content = vec![
-                        Line::from(vec![Span::styled("🔋 Baterai  : ", Style::default().fg(Color::DarkGray)), Span::styled("85% (Charging)", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("📶 WiFi     : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_ssid, Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("🚀 Speed    : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_tp, Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("🔊 Audio    : ", Style::default().fg(Color::DarkGray)), Span::styled("Unmuted (65% Vol)", Style::default().fg(Color::Yellow))]),
+                        Line::from(vec![Span::styled("Battery : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [Charging]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Network : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_ssid, Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("Bandwidth: ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_tp, Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("Audio   : ", Style::default().fg(Color::DarkGray)), Span::styled("Active [65%]", Style::default().fg(Color::Yellow))]),
                     ];
                     f.render_widget(Paragraph::new(sys_env_content).block(sys_env_block), metrics_chunks[1]);
                 }
@@ -449,7 +441,7 @@ async fn main() -> Result<()> {
                     };
                     let arrow = |item: PerfMenu| -> &'static str {
                         if perf_menu == item {
-                            "▶ "
+                            "> "
                         } else {
                             "  "
                         }
@@ -473,7 +465,7 @@ async fn main() -> Result<()> {
                             menu_style(PerfMenu::Wifi),
                         )),
                     ];
-                    let menu = Paragraph::new(menu_items).block(Block::bordered().title(" Utilities "));
+                    let menu = Paragraph::new(menu_items).block(Block::bordered().title(" Utilities ").border_style(Style::default().fg(Color::DarkGray)));
                     f.render_widget(menu, sections[0]);
 
                     // ---------------- KANAN (70%): detail sesuai menu yang dipilih ----------------
@@ -491,7 +483,7 @@ async fn main() -> Result<()> {
                             let usage_percent =
                                 cpu_snapshot.as_ref().map(|s| s.soft_utilization).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" CPU Usage "))
+                                .block(Block::bordered().title(" CPU Usage ").border_style(Style::default().fg(Color::DarkGray)))
                                 .gauge_style(Style::default().fg(Color::Cyan))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -511,16 +503,16 @@ async fn main() -> Result<()> {
                                 .data(&cpu_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["awal", "sekarang"]);
+                                .labels(["start", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Persen", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
                                 .labels(["0", "50", "100"]);
 
                             let cpu_chart = Chart::new(vec![cpu_dataset])
-                                .block(Block::bordered().title(" History "))
+                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(cpu_chart, detail_rows[1]);
@@ -528,20 +520,20 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &cpu_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (live)",
+                                        "Software (Live)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Processes        : {}", snapshot.soft_processes)),
                                     Line::from(format!("Threads          : {}", snapshot.soft_threads)),
                                     Line::from(format!("Handles          : {}", snapshot.soft_handles)),
                                     Line::from(format!(
-                                        "Speed sekarang   : {:.0} MHz",
+                                        "Current speed    : {:.0} MHz",
                                         snapshot.soft_speed_clock
                                     )),
                                     Line::from(format!("Uptime           : {}", snapshot.soft_uptime)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (statis)",
+                                        "Hardware (Static)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!(
@@ -577,12 +569,12 @@ async fn main() -> Result<()> {
                                 ]
                             } else {
                                 vec![Line::from(Span::styled(
-                                    "Menunggu data CPU pertama...",
+                                    "Awaiting CPU metrics...",
                                     Style::default().fg(Color::DarkGray),
                                 ))]
                             };
                             let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
@@ -607,7 +599,7 @@ async fn main() -> Result<()> {
                                 })
                                 .unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" RAM Usage "))
+                                .block(Block::bordered().title(" RAM Usage ").border_style(Style::default().fg(Color::DarkGray)))
                                 .gauge_style(Style::default().fg(Color::Green))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -627,16 +619,16 @@ async fn main() -> Result<()> {
                                 .data(&ram_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["awal", "sekarang"]);
+                                .labels(["start", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Persen", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
                                 .labels(["0", "50", "100"]);
 
                             let ram_chart = Chart::new(vec![ram_dataset])
-                                .block(Block::bordered().title(" History "))
+                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(ram_chart, detail_rows[1]);
@@ -644,7 +636,7 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &ram_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (live)",
+                                        "Software (Live)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("In use           : {:.2} GB", snapshot.soft_in_use)),
@@ -675,7 +667,7 @@ async fn main() -> Result<()> {
                                     )),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (statis)",
+                                        "Hardware (Static)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!(
@@ -684,7 +676,7 @@ async fn main() -> Result<()> {
                                     )),
                                     Line::from(format!("Speed            : {} MHz", snapshot.hard_speed)),
                                     Line::from(format!(
-                                        "Slots terpakai   : {}",
+                                        "Slots used       : {}",
                                         snapshot.hard_slots_used
                                     )),
                                     Line::from(format!(
@@ -694,12 +686,12 @@ async fn main() -> Result<()> {
                                 ]
                             } else {
                                 vec![Line::from(Span::styled(
-                                    "Menunggu data RAM pertama...",
+                                    "Awaiting RAM metrics...",
                                     Style::default().fg(Color::DarkGray),
                                 ))]
                             };
                             let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
@@ -716,7 +708,7 @@ async fn main() -> Result<()> {
                             let usage_percent =
                                 disk_snapshot.as_ref().map(|s| s.soft_active_time).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" Disk Active Time "))
+                                .block(Block::bordered().title(" Disk Active Time ").border_style(Style::default().fg(Color::DarkGray)))
                                 .gauge_style(Style::default().fg(Color::Yellow))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
@@ -736,16 +728,16 @@ async fn main() -> Result<()> {
                                 .data(&disk_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["awal", "sekarang"]);
+                                .labels(["start", "now"]);
                             let y_axis = Axis::default()
-                                .title(Span::styled("Persen", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Percent", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, 100.0])
                                 .labels(["0", "50", "100"]);
 
                             let disk_chart = Chart::new(vec![disk_dataset])
-                                .block(Block::bordered().title(" History "))
+                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(disk_chart, detail_rows[1]);
@@ -753,7 +745,7 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &disk_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (live)",
+                                        "Software (Live)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!(
@@ -774,7 +766,7 @@ async fn main() -> Result<()> {
                                     )),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (statis)",
+                                        "Hardware (Static)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Capacity         : {} GB", snapshot.hard_capacity)),
@@ -794,12 +786,12 @@ async fn main() -> Result<()> {
                                 ]
                             } else {
                                 vec![Line::from(Span::styled(
-                                    "Menunggu data Disk pertama...",
+                                    "Awaiting Disk metrics...",
                                     Style::default().fg(Color::DarkGray),
                                 ))]
                             };
                             let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
@@ -819,7 +811,7 @@ async fn main() -> Result<()> {
                             let gauge_percent =
                                 ((throughput / THROUGHPUT_MAX) * 100.0).clamp(0.0, 100.0);
                             let usage_gauge = Gauge::default()
-                                .block(Block::bordered().title(" WiFi Throughput "))
+                                .block(Block::bordered().title(" WiFi Throughput ").border_style(Style::default().fg(Color::DarkGray)))
                                 .gauge_style(Style::default().fg(Color::Magenta))
                                 .percent(gauge_percent.round() as u16)
                                 .label(format!("{throughput:.1} Mbps"));
@@ -839,9 +831,9 @@ async fn main() -> Result<()> {
                                 .data(&wifi_points);
 
                             let x_axis = Axis::default()
-                                .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
+                                .title(Span::styled("Time", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
-                                .labels(["awal", "sekarang"]);
+                                .labels(["start", "now"]);
                             let wifi_y_max =
                                 wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
                             let y_axis = Axis::default()
@@ -854,7 +846,7 @@ async fn main() -> Result<()> {
                                 ]);
 
                             let wifi_chart = Chart::new(vec![wifi_dataset])
-                                .block(Block::bordered().title(" History "))
+                                .block(Block::bordered().title(" History ").border_style(Style::default().fg(Color::DarkGray)))
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
                             f.render_widget(wifi_chart, detail_rows[1]);
@@ -862,7 +854,7 @@ async fn main() -> Result<()> {
                             let detail_text: Vec<Line> = if let Some(snapshot) = &wifi_snapshot {
                                 vec![
                                     Line::from(Span::styled(
-                                        "Software (live)",
+                                        "Software (Live)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("SSID             : {}", snapshot.soft_ssid)),
@@ -885,7 +877,7 @@ async fn main() -> Result<()> {
                                     Line::from(format!("Adapter          : {}", snapshot.soft_adapter_name)),
                                     Line::from(""),
                                     Line::from(Span::styled(
-                                        "Hardware (statis)",
+                                        "Hardware (Static)",
                                         Style::default().add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!(
@@ -907,12 +899,12 @@ async fn main() -> Result<()> {
                                 ]
                             } else {
                                 vec![Line::from(Span::styled(
-                                    "Menunggu data WiFi pertama...",
+                                    "Awaiting WiFi metrics...",
                                     Style::default().fg(Color::DarkGray),
                                 ))]
                             };
                             let detail_panel =
-                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Details ").border_style(Style::default().fg(Color::DarkGray)));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
                     }
