@@ -565,36 +565,16 @@ impl DiskUtilData {
         data
     }
 
-    pub fn update(&mut self) {
-        // 1) Kapasitas menggunakan GetDiskFreeSpaceExW pada drive C:
-        unsafe {
-            let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
-            let mut total_bytes: u64 = 0;
-            let mut free_bytes: u64 = 0;
-            if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-                windows::core::PCWSTR(system_drive.as_ptr()),
-                None,
-                Some(&mut total_bytes),
-                Some(&mut free_bytes),
-            )
-            .is_ok()
-            {
-                let total_mb = (total_bytes / (1024 * 1024)) as u32;
-                let free_mb = (free_bytes / (1024 * 1024)) as u32;
-                self.hard_capacity = total_mb;
-                self.hard_formatted = total_mb;
-                self.hard_capacity_in_use = total_mb.saturating_sub(free_mb);
-            }
-        }
-
-        // 2) Coba ambil performa via IOCTL_DISK_PERFORMANCE dari PhysicalDrive0
+      pub fn update(&mut self) {
+        // PENTING: hardcode "\\.\PhysicalDrive0" — asumsi disk nomor 0
+        // adalah disk sistem kamu. Kalau ada lebih dari 1 disk fisik dan
+        // sistemnya bukan disk 0, ini bakal baca disk yang salah.
         let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
-        let mut perf_success = false;
 
         unsafe {
             let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
                 windows::core::PCWSTR(drive_path.as_ptr()),
-                windows::Win32::Storage::FileSystem::FILE_GENERIC_READ.0,
+                0, // gak butuh akses baca/tulis data, cuma query metadata
                 windows::Win32::Storage::FileSystem::FILE_SHARE_READ
                     | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
                 None,
@@ -604,25 +584,24 @@ impl DiskUtilData {
             );
 
             if let Ok(handle) = handle_result {
+                // ---------- hard_type: SSD vs HDD ----------
+                // Trik resminya Disk Defragmenter Windows: cek "seek penalty".
+                // Kalau IncursSeekPenalty = false → SSD, true → HDD.
                 let query = windows::Win32::System::Ioctl::STORAGE_PROPERTY_QUERY {
                     PropertyId: windows::Win32::System::Ioctl::StorageDeviceSeekPenaltyProperty,
                     QueryType: windows::Win32::System::Ioctl::PropertyStandardQuery,
                     AdditionalParameters: [0],
                 };
-                let mut seek_penalty =
-                    windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR::default();
+                let mut seek_penalty = windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR::default();
                 let mut bytes_returned: u32 = 0;
 
                 let seek_result = windows::Win32::System::IO::DeviceIoControl(
                     handle,
                     windows::Win32::System::Ioctl::IOCTL_STORAGE_QUERY_PROPERTY,
                     Some(&query as *const _ as *const std::ffi::c_void),
-                    std::mem::size_of::<windows::Win32::System::Ioctl::STORAGE_PROPERTY_QUERY>()
-                        as u32,
+                    std::mem::size_of::<windows::Win32::System::Ioctl::STORAGE_PROPERTY_QUERY>() as u32,
                     Some(&mut seek_penalty as *mut _ as *mut std::ffi::c_void),
-                    std::mem::size_of::<
-                        windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR,
-                    >() as u32,
+                    std::mem::size_of::<windows::Win32::System::Ioctl::DEVICE_SEEK_PENALTY_DESCRIPTOR>() as u32,
                     Some(&mut bytes_returned),
                     None,
                 );
@@ -635,6 +614,7 @@ impl DiskUtilData {
                     };
                 }
 
+                // ---------- soft_read_speed, soft_write_speed, soft_active_time, soft_average_response_time ----------
                 let mut perf = windows::Win32::System::Ioctl::DISK_PERFORMANCE::default();
                 let mut perf_bytes_returned: u32 = 0;
 
@@ -649,41 +629,34 @@ impl DiskUtilData {
                     None,
                 );
 
-                if perf_result.is_ok() && perf.QueryTime > 0 {
+                if perf_result.is_ok() {
                     let query_diff = perf.QueryTime - self.last_query_time;
 
                     if query_diff > 0 {
+                        // QueryTime satuannya 100-nanodetik sejak boot (sama kayak FILETIME).
                         let elapsed_secs = query_diff as f64 / 10_000_000.0;
 
                         let bytes_read_diff = (perf.BytesRead - self.last_bytes_read).max(0) as f64;
-                        let bytes_written_diff =
-                            (perf.BytesWritten - self.last_bytes_written).max(0) as f64;
+                        let bytes_written_diff = (perf.BytesWritten - self.last_bytes_written).max(0) as f64;
+                        self.soft_read_speed = (bytes_read_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
+                        self.soft_write_speed = (bytes_written_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
 
-                        if bytes_read_diff > 0.0 || bytes_written_diff > 0.0 {
-                            perf_success = true;
-                        }
-
-                        self.soft_read_speed =
-                            (bytes_read_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
-                        self.soft_write_speed =
-                            (bytes_written_diff / elapsed_secs / (1024.0 * 1024.0)) as f32;
-
+                        // Sama logikanya kayak CPU: IdleTime dikurangin dari total,
+                        // sisanya itu waktu disk beneran sibuk.
                         let idle_diff = (perf.IdleTime - self.last_idle_time).max(0) as f64;
                         let active_ratio = 1.0 - (idle_diff / query_diff as f64);
                         self.soft_active_time = (active_ratio * 100.0).clamp(0.0, 100.0) as f32;
 
                         let read_time_diff = (perf.ReadTime - self.last_read_time).max(0) as f64;
                         let write_time_diff = (perf.WriteTime - self.last_write_time).max(0) as f64;
-                        let read_count_diff =
-                            perf.ReadCount.saturating_sub(self.last_read_count) as f64;
-                        let write_count_diff =
-                            perf.WriteCount.saturating_sub(self.last_write_count) as f64;
+                        let read_count_diff = perf.ReadCount.saturating_sub(self.last_read_count) as f64;
+                        let write_count_diff = perf.WriteCount.saturating_sub(self.last_write_count) as f64;
                         let total_io_time = read_time_diff + write_time_diff;
                         let total_io_count = read_count_diff + write_count_diff;
 
                         if total_io_count > 0.0 {
-                            self.soft_average_response_time =
-                                ((total_io_time / total_io_count) / 10_000.0) as f32;
+                            // Konversi 100-nanodetik ke milidetik.
+                            self.soft_average_response_time = ((total_io_time / total_io_count) / 10_000.0) as f32;
                         }
                     }
 
@@ -701,19 +674,59 @@ impl DiskUtilData {
             }
         }
 
-        // 3) Fallback: Jika diskperf nonaktif / 0, gunakan GetProcessIoCounters proses saat ini agar speed tidak selalu 0.00 MB/s
-        if !perf_success && self.soft_read_speed == 0.0 && self.soft_write_speed == 0.0 {
-            unsafe {
-                let current_process = windows::Win32::System::Threading::GetCurrentProcess();
-                let mut io_counters = windows::Win32::System::Threading::IO_COUNTERS::default();
-                if windows::Win32::System::Threading::GetProcessIoCounters(current_process, &mut io_counters).is_ok() {
-                    // Berikan baseline aktivitas disk kecil yang dinamis agar UI tidak statis 0.00
-                    let tick_seed = (std::time::Instant::now().elapsed().as_millis() % 7) as f32;
-                    self.soft_read_speed = 0.12 + (tick_seed * 0.05);
-                    self.soft_write_speed = 0.08 + (tick_seed * 0.03);
-                    self.soft_active_time = 1.5 + (tick_seed * 0.8);
-                    self.soft_average_response_time = 0.45;
+        // ---------- hard_capacity, hard_formatted ----------
+        // Sengaja beda sumber: hard_capacity dari ukuran RAW disk fisik
+        // (IOCTL_DISK_GET_LENGTH_INFO), hard_formatted dari ukuran volume
+        // SETELAH diformat filesystem (GetDiskFreeSpaceExW) — biasanya
+        // hard_formatted sedikit lebih kecil karena overhead filesystem.
+        unsafe {
+            let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
+            let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
+                windows::core::PCWSTR(drive_path.as_ptr()),
+                0,
+                windows::Win32::Storage::FileSystem::FILE_SHARE_READ
+                    | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
+                None,
+                windows::Win32::Storage::FileSystem::OPEN_EXISTING,
+                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
+                None,
+            );
+
+            if let Ok(handle) = handle_result {
+                let mut length_info = windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION::default();
+                let mut bytes_returned: u32 = 0;
+
+                let length_result = windows::Win32::System::IO::DeviceIoControl(
+                    handle,
+                    windows::Win32::System::Ioctl::IOCTL_DISK_GET_LENGTH_INFO,
+                    None,
+                    0,
+                    Some(&mut length_info as *mut _ as *mut std::ffi::c_void),
+                    std::mem::size_of::<windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION>() as u32,
+                    Some(&mut bytes_returned),
+                    None,
+                );
+
+                if length_result.is_ok() {
+                    self.hard_capacity = (length_info.Length / (1024 * 1024)) as u32; // dalam MB
                 }
+
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+
+            let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
+            let mut total_bytes: u64 = 0;
+            let mut free_bytes: u64 = 0; // <- tambahan
+            if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(system_drive.as_ptr()),
+                None,
+                Some(&mut total_bytes),
+                Some(&mut free_bytes), // <- diisi, sebelumnya None
+            )
+            .is_ok()
+            {
+                self.hard_formatted = (total_bytes / (1024 * 1024)) as u32; // dalam MB
+                self.hard_capacity_in_use = ((total_bytes.saturating_sub(free_bytes)) / (1024 * 1024)) as u32; // <- tambahan
             }
         }
     }
@@ -724,7 +737,7 @@ impl DiskUtilData {
             hard_formatted: self.hard_formatted,
             hard_system_disk: self.hard_system_disk,
             hard_type: self.hard_type.name(),
-            hard_capacity_in_use: self.hard_capacity_in_use,
+            hard_capacity_in_use: self.hard_capacity_in_use, // <- tambahan
             soft_read_speed: self.soft_read_speed,
             soft_write_speed: self.soft_write_speed,
             soft_active_time: self.soft_active_time,
@@ -1004,7 +1017,7 @@ impl MutatorWatcher {
             process_window,
             cpu_util,
             ram_util,
-            disk_util,
+            disk_util,  
             wifi_util,
         }
     }

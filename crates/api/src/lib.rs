@@ -1,7 +1,15 @@
+//! `api` — sengaja dikosongkan/minimal, isi terserah kebutuhan nanti
+//! (REST server buat expose data ke web dashboard? gRPC? export JSON?).
+//!
+//! Satu-satunya "aturan main": kalau butuh baca data histori, panggil
+//! lewat trait `separation::ActivityStore`, jangan depend langsung ke
+//! crate `database`. Supaya storage tetap bisa diganti tanpa merusak API.
+
 use anyhow::Ok;
-use separation::{ActivityEvent, ActivityKind, ActivityStore, CpuSnapshot, PowerSnapshot, AudioSnapshot};
+use separation::{ActivityEvent, ActivityKind, ActivityStore, CpuSnapshot};
 use std::sync::Arc;
 
+/// Placeholder state. Nanti bisa jadi Router state (axum), dsb.
 pub struct ApiState {
     pub store: Arc<dyn ActivityStore>,
 }
@@ -12,6 +20,7 @@ impl ApiState {
     }
 
     pub async fn health_check(&self) -> anyhow::Result<usize> {
+        // Contoh minimal: hitung berapa event yang sudah tersimpan.
         Ok(self.store.recent(usize::MAX).await?.len())
     }
 
@@ -49,6 +58,7 @@ impl ApiState {
             _ => None,
         });
         Ok(latest_cpu)
+        
     }
 
     pub async fn ram_util_check(&self) -> anyhow::Result<Option<separation::RamSnapshot>> {
@@ -59,6 +69,7 @@ impl ApiState {
         });
         Ok(latest_ram)
     }
+
     
     pub async fn disk_util_check(&self) -> anyhow::Result<Option<separation::DiskSnapshot>> {
         let events: Vec<separation::ActivityEvent> = self.store.recent(200).await?;
@@ -77,22 +88,7 @@ impl ApiState {
         });
         Ok(latest_wifi_util)
     }
+   
 
-    pub async fn power_check(&self) -> anyhow::Result<Option<PowerSnapshot>> {
-        let events: Vec<ActivityEvent> = self.store.recent(200).await?;
-        let latest = events.iter().rev().find_map(|event| match &event.kind {
-            ActivityKind::Power(snapshot) => Some(snapshot.clone()),
-            _ => None,
-        });
-        Ok(latest)
-    }
 
-    pub async fn audio_check(&self) -> anyhow::Result<Option<AudioSnapshot>> {
-        let events: Vec<ActivityEvent> = self.store.recent(200).await?;
-        let latest = events.iter().rev().find_map(|event| match &event.kind {
-            ActivityKind::Audio(snapshot) => Some(snapshot.clone()),
-            _ => None,
-        });
-        Ok(latest)
-    }
 }
