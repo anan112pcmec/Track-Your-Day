@@ -567,9 +567,10 @@ impl DiskUtilData {
         let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
 
         unsafe {
+            // Fix: Gunakan 0x80000000 (GENERIC_READ) agar DeviceIoControl tidak gagal akses (Access Denied / 0)
             let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
                 windows::core::PCWSTR(drive_path.as_ptr()),
-                0,
+                0x80000000, // GENERIC_READ
                 windows::Win32::Storage::FileSystem::FILE_SHARE_READ
                     | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
                 None,
@@ -667,27 +668,9 @@ impl DiskUtilData {
                     self.last_query_time = perf.QueryTime;
                 }
 
-                let _ = windows::Win32::Foundation::CloseHandle(handle);
-            }
-        }
-
-        unsafe {
-            let drive_path: std::vec::Vec<u16> = "\\\\.\\PhysicalDrive0\0".encode_utf16().collect();
-            let handle_result = windows::Win32::Storage::FileSystem::CreateFileW(
-                windows::core::PCWSTR(drive_path.as_ptr()),
-                0,
-                windows::Win32::Storage::FileSystem::FILE_SHARE_READ
-                    | windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
-                None,
-                windows::Win32::Storage::FileSystem::OPEN_EXISTING,
-                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
-                None,
-            );
-
-            if let Ok(handle) = handle_result {
                 let mut length_info =
                     windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION::default();
-                let mut bytes_returned: u32 = 0;
+                let mut bytes_returned_len: u32 = 0;
 
                 let length_result = windows::Win32::System::IO::DeviceIoControl(
                     handle,
@@ -697,7 +680,7 @@ impl DiskUtilData {
                     Some(&mut length_info as *mut _ as *mut std::ffi::c_void),
                     std::mem::size_of::<windows::Win32::System::Ioctl::GET_LENGTH_INFORMATION>()
                         as u32,
-                    Some(&mut bytes_returned),
+                    Some(&mut bytes_returned_len),
                     None,
                 );
 
@@ -707,7 +690,9 @@ impl DiskUtilData {
 
                 let _ = windows::Win32::Foundation::CloseHandle(handle);
             }
+        }
 
+        unsafe {
             let system_drive: std::vec::Vec<u16> = "C:\\\0".encode_utf16().collect();
             let mut total_bytes: u64 = 0;
             let mut free_bytes: u64 = 0;
