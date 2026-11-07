@@ -478,10 +478,10 @@ async fn main() -> Result<()> {
                         if perf_menu == item {
                             Style::default()
                                 .fg(Color::Black)
-                                .bg(Color::White)
+                                .bg(Color::Cyan)
                                 .add_modifier(Modifier::BOLD)
                         } else {
-                            Style::default().fg(Color::Gray)
+                            Style::default().fg(Color::White)
                         }
                     };
                     let indicator = |item: PerfMenu| -> &'static str {
@@ -512,14 +512,14 @@ async fn main() -> Result<()> {
                     ];
                     let menu = Paragraph::new(menu_items).block(
                         Block::default()
-                            .title(Span::styled(" Subsystems ", Style::default().fg(Color::White)))
+                            .title(Span::styled(" Subsystems ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
                             .borders(Borders::ALL)
-                            .border_type(BorderType::Plain)
+                            .border_type(BorderType::Rounded)
                             .border_style(Style::default().fg(Color::DarkGray)),
                     );
                     f.render_widget(menu, sections[0]);
 
-                    // ---------------- KANAN: DETAIL & GRAFIK ----------------
+                    // ---------------- KANAN: DETAIL & GRAFIK (DENGAN WARNA KHUSUS PERFORMANCE TAB) ----------------
                     match perf_menu {
                         PerfMenu::Cpu => {
                             let detail_rows = Layout::default()
@@ -538,10 +538,10 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" CPU Utilization ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Cyan)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Cyan))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -556,7 +556,7 @@ async fn main() -> Result<()> {
                                 .name("CPU %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Cyan))
                                 .data(&cpu_points);
 
                             let x_axis = Axis::default()
@@ -573,8 +573,8 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Cyan)),
                                 )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
@@ -584,7 +584,7 @@ async fn main() -> Result<()> {
                                 vec![
                                     Line::from(Span::styled(
                                         "Software Telemetry",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Active Processes : {}", snapshot.soft_processes)),
                                     Line::from(format!("Active Threads   : {}", snapshot.soft_threads)),
@@ -592,7 +592,7 @@ async fn main() -> Result<()> {
                                     Line::from(""),
                                     Line::from(Span::styled(
                                         "Hardware Specs",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Base Clock       : {:.0} MHz", snapshot.hard_base_speed)),
                                     Line::from(format!("Cores / Threads  : {} / {}", snapshot.hard_cores, snapshot.hard_logical_processors)),
@@ -605,8 +605,8 @@ async fn main() -> Result<()> {
                                 Block::default()
                                     .title(" Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
-                                    .border_style(Style::default().fg(Color::DarkGray)),
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::Cyan)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
@@ -635,10 +635,10 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" RAM Utilization ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Green)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Green))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -653,7 +653,7 @@ async fn main() -> Result<()> {
                                 .name("RAM %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Green))
                                 .data(&ram_points);
 
                             let x_axis = Axis::default()
@@ -670,8 +670,8 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Green)),
                                 )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
@@ -681,7 +681,7 @@ async fn main() -> Result<()> {
                                 vec![
                                     Line::from(Span::styled(
                                         "Software Telemetry",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("In Use           : {:.2} GB", snapshot.soft_in_use)),
                                     Line::from(format!("Available        : {:.2} GB", snapshot.soft_available)),
@@ -689,7 +689,7 @@ async fn main() -> Result<()> {
                                     Line::from(""),
                                     Line::from(Span::styled(
                                         "Hardware Specs",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Total Capacity   : {:.2} GB", snapshot.hard_capacity)),
                                     Line::from(format!("Memory Speed     : {} MHz", snapshot.hard_speed)),
@@ -702,8 +702,8 @@ async fn main() -> Result<()> {
                                 Block::default()
                                     .title(" Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
-                                    .border_style(Style::default().fg(Color::DarkGray)),
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::Green)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
@@ -724,10 +724,10 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" Disk Active Time ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Yellow)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Yellow))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -742,7 +742,7 @@ async fn main() -> Result<()> {
                                 .name("Active %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Yellow))
                                 .data(&disk_points);
 
                             let x_axis = Axis::default()
@@ -759,8 +759,8 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Yellow)),
                                 )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
@@ -770,7 +770,7 @@ async fn main() -> Result<()> {
                                 vec![
                                     Line::from(Span::styled(
                                         "Software Telemetry",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Read Speed       : {:.2} MB/s", snapshot.soft_read_speed)),
                                     Line::from(format!("Write Speed      : {:.2} MB/s", snapshot.soft_write_speed)),
@@ -778,7 +778,7 @@ async fn main() -> Result<()> {
                                     Line::from(""),
                                     Line::from(Span::styled(
                                         "Hardware Specs",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Capacity         : {} GB", snapshot.hard_capacity)),
                                     Line::from(format!("Disk Type        : {}", snapshot.hard_type)),
@@ -790,8 +790,8 @@ async fn main() -> Result<()> {
                                 Block::default()
                                     .title(" Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
-                                    .border_style(Style::default().fg(Color::DarkGray)),
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::Yellow)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
@@ -808,17 +808,16 @@ async fn main() -> Result<()> {
                             let throughput =
                                 wifi_snapshot.as_ref().map(|s| s.hard_throughput).unwrap_or(0.0);
                             
-                            // Perbaikan: Gauge persentase WiFi dengan skala dinamis
                             let gauge_percent = ((throughput / 100.0) * 100.0).clamp(0.0, 100.0);
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
                                         .title(" Wireless Throughput ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Magenta)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Magenta))
                                 .percent(gauge_percent.round() as u16)
                                 .label(format!("{throughput:.2} Mbps"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -833,7 +832,7 @@ async fn main() -> Result<()> {
                                 .name("Mbps")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Magenta))
                                 .data(&wifi_points);
 
                             let x_axis = Axis::default()
@@ -841,7 +840,6 @@ async fn main() -> Result<()> {
                                 .bounds([0.0, HISTORY_LEN as f64])
                                 .labels(["past", "now"]);
 
-                            // Perbaikan: Sumbu Y chart WiFi sekarang dinamis berdasarkan nilai maksimum history
                             let wifi_max_val = wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
                             let y_axis = Axis::default()
                                 .title(Span::styled("Mbps", Style::default().fg(Color::DarkGray)))
@@ -857,8 +855,8 @@ async fn main() -> Result<()> {
                                     Block::default()
                                         .title(" Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
-                                        .border_style(Style::default().fg(Color::DarkGray)),
+                                        .border_type(BorderType::Rounded)
+                                        .border_style(Style::default().fg(Color::Magenta)),
                                 )
                                 .x_axis(x_axis)
                                 .y_axis(y_axis);
@@ -868,7 +866,7 @@ async fn main() -> Result<()> {
                                 vec![
                                     Line::from(Span::styled(
                                         "Software Telemetry",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Magenta).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("SSID             : {}", snapshot.soft_ssid)),
                                     Line::from(format!("IPv4 Address     : {}", snapshot.soft_ipv4_address)),
@@ -876,7 +874,7 @@ async fn main() -> Result<()> {
                                     Line::from(""),
                                     Line::from(Span::styled(
                                         "Hardware Specs",
-                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                        Style::default().fg(Color::Magenta).add_modifier(Modifier::UNDERLINED),
                                     )),
                                     Line::from(format!("Adapter Interface: {}", snapshot.hard_name_wireless_lan)),
                                     Line::from(format!("Tx / Rx Speed    : {:.2} / {:.2} Mbps", snapshot.hard_send, snapshot.hard_receive)),
@@ -888,8 +886,8 @@ async fn main() -> Result<()> {
                                 Block::default()
                                     .title(" Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
-                                    .border_style(Style::default().fg(Color::DarkGray)),
+                                    .border_type(BorderType::Rounded)
+                                    .border_style(Style::default().fg(Color::Magenta)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
