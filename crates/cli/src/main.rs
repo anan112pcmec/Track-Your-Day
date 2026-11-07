@@ -12,13 +12,13 @@ use watcher_mutator::{CpuUtilData, DiskUtilData, MutatorWatcher, RamUtilData, Wi
 use watcher_reactive::{LoggingReactor, ReactiveWatcher};
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Gauge, Paragraph, Sparkline, Wrap},
+    widgets::{Block, Gauge, Paragraph, Sparkline},
 };
 use ratatui::symbols::Marker;
 use ratatui::widgets::{Axis, Chart, Dataset, GraphType};
@@ -41,10 +41,6 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Ambil isi VecDeque jadi Vec biasa buat dikasih ke Sparkline/Chart.
-/// HARUS di-`let` ke variabel dulu sebelum dipakai widget — kalau
-/// dipanggil inline di tengah argumen, hasilnya adalah temporary yang
-/// mati duluan sebelum sempat dipakai (borrow checker bakal nolak).
 fn wpm_data_slice(history: &VecDeque<u64>) -> Vec<u64> {
     history.iter().copied().collect()
 }
@@ -55,14 +51,32 @@ enum ActiveTab {
     Performance,
 }
 
-/// Menu kiri di tab Performance — sekarang beneran bisa dipindah pakai
-/// panah atas/bawah, bukan cuma dekorasi statis.
 #[derive(PartialEq, Clone, Copy)]
 enum PerfMenu {
     Cpu,
     Memory,
     Disk,
     Wifi,
+}
+
+impl PerfMenu {
+    fn next(self) -> Self {
+        match self {
+            PerfMenu::Cpu => PerfMenu::Memory,
+            PerfMenu::Memory => PerfMenu::Disk,
+            PerfMenu::Disk => PerfMenu::Wifi,
+            PerfMenu::Wifi => PerfMenu::Wifi,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            PerfMenu::Cpu => PerfMenu::Cpu,
+            PerfMenu::Memory => PerfMenu::Cpu,
+            PerfMenu::Disk => PerfMenu::Memory,
+            PerfMenu::Wifi => PerfMenu::Disk,
+        }
+    }
 }
 
 #[tokio::main]
@@ -83,7 +97,7 @@ async fn main() -> Result<()> {
         CpuUtilData::new(),
         RamUtilData::new(),
         DiskUtilData::new(),
-        WiFiUtilData::new()
+        WiFiUtilData::new(),
     );
     let mutator_handle = tokio::spawn(mutator.run());
 
@@ -100,11 +114,11 @@ async fn main() -> Result<()> {
 
     // Timer & Ticker
     let start_time = Instant::now();
-    let mut render_interval = tokio::time::interval(Duration::from_millis(100));
+    let mut render_interval = tokio::time::interval(Duration::from_millis(50));
+    let mut last_fetch_time = Instant::now() - Duration::from_secs(5); // fetch segera saat start
 
     let mut active_tab = ActiveTab::Activity;
     let mut perf_menu = PerfMenu::Cpu;
-    let mut current_menu: u8 = 0; // 0=Cpu, 1=Memory, 2=Disk, 3=Wifi   <- PINDAH KE SINI
 
     const HISTORY_LEN: usize = 40;
     let mut wpm_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -116,104 +130,118 @@ async fn main() -> Result<()> {
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut wifi_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
+    // Cache data metrik agar tidak query lock store setiap 50-100ms
+    let mut wpm_score: u32 = 0;
+    let mut running_app: String = String::from("None");
+    let mut current_process: usize = 0;
+    let mut cpu_snapshot: Option<CpuSnapshot> = None;
+    let mut ram_snapshot: Option<RamSnapshot> = None;
+    let mut disk_snapshot: Option<DiskSnapshot> = None;
+    let mut wifi_snapshot: Option<WiFiSnapshot> = None;
+
     // 7) MAIN TUI LOOP
     loop {
         render_interval.tick().await;
 
         let uptime_secs = start_time.elapsed().as_secs();
-        let wpm_score: u32 = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
-        let running_app: String = api_state
-            .running_application_check()
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(String::from("None"));
-        let current_process: usize = api_state
-            .running_process_check()
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(0);
-        // Ambil snapshot CPU & RAM terbaru dari database lewat api_state.
-        let cpu_snapshot: Option<CpuSnapshot> = api_state.cpu_util_check().await.ok().flatten();
-        let ram_snapshot: Option<RamSnapshot> = api_state.ram_util_check().await.ok().flatten();
-        let disk_snapshot: Option<DiskSnapshot> = api_state.disk_util_check().await.ok().flatten();
-        let wifi_snapshot: Option<WiFiSnapshot> = api_state.wifi_util_check().await.ok().flatten();
 
-        if wpm_history.len() == HISTORY_LEN {
-            wpm_history.pop_front();
-        }
-        wpm_history.push_back(wpm_score as u64);
+        // Refresh data dari database setiap 1 detik saja (efisien & menghindari lock berlebih)
+        if last_fetch_time.elapsed() >= Duration::from_secs(1) {
+            last_fetch_time = Instant::now();
 
-        if process_history.len() == HISTORY_LEN {
-            process_history.pop_front();
-        }
-        process_history.push_back(current_process as u64);
+            wpm_score = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
+            running_app = api_state
+                .running_application_check()
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| String::from("None"));
+            current_process = api_state
+                .running_process_check()
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or(0);
 
-        if uptime_history.len() == HISTORY_LEN {
-            uptime_history.pop_front();
-        }
-        uptime_history.push_back(uptime_secs);
+            cpu_snapshot = api_state.cpu_util_check().await.ok().flatten();
+            ram_snapshot = api_state.ram_util_check().await.ok().flatten();
+            disk_snapshot = api_state.disk_util_check().await.ok().flatten();
+            wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
 
-        if window_history.back() != Some(&running_app) {
-            if window_history.len() == 5 {
-                window_history.pop_front();
+            if wpm_history.len() == HISTORY_LEN {
+                wpm_history.pop_front();
             }
-            window_history.push_back(running_app.clone());
-        }
+            wpm_history.push_back(wpm_score as u64);
 
-        // History buat chart CPU usage.
-        if cpu_history.len() == HISTORY_LEN {
-            cpu_history.pop_front();
-        }
-        cpu_history.push_back(
-            cpu_snapshot
-                .as_ref()
-                .map(|s| s.soft_utilization.round() as u64)
-                .unwrap_or(0),
-        );
+            if process_history.len() == HISTORY_LEN {
+                process_history.pop_front();
+            }
+            process_history.push_back(current_process as u64);
 
-        // History buat chart RAM usage — dihitung sebagai persen dari kapasitas.
-        if ram_history.len() == HISTORY_LEN {
-            ram_history.pop_front();
-        }
-        ram_history.push_back(
-            ram_snapshot
-                .as_ref()
-                .map(|s| {
-                    if s.hard_capacity > 0.0 {
-                        ((s.soft_in_use / s.hard_capacity) * 100.0).round() as u64
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(0),
-        );
+            if uptime_history.len() == HISTORY_LEN {
+                uptime_history.pop_front();
+            }
+            uptime_history.push_back(uptime_secs);
 
-        if wifi_history.len() == HISTORY_LEN {
-            wifi_history.pop_front();
-        }
-        wifi_history.push_back(
-            wifi_snapshot
-                .as_ref()
-                .map(|s| s.hard_throughput.round() as u64)
-                .unwrap_or(0),
-        );
-
-        if disk_history.len() == HISTORY_LEN{
-            disk_history.pop_front();
-        }
-        disk_history.push_back(
-            disk_snapshot
-            .as_ref()
-            .map(|s| {
-                if s.hard_capacity > 0 {
-                    ((s.hard_capacity_in_use / s.hard_capacity) * 100) as u64
-                } else {
-                    0
+            if window_history.back() != Some(&running_app) {
+                if window_history.len() == 5 {
+                    window_history.pop_front();
                 }
-            }).unwrap_or(0),
-        );
+                window_history.push_back(running_app.clone());
+            }
+
+            if cpu_history.len() == HISTORY_LEN {
+                cpu_history.pop_front();
+            }
+            cpu_history.push_back(
+                cpu_snapshot
+                    .as_ref()
+                    .map(|s| s.soft_utilization.round() as u64)
+                    .unwrap_or(0),
+            );
+
+            if ram_history.len() == HISTORY_LEN {
+                ram_history.pop_front();
+            }
+            ram_history.push_back(
+                ram_snapshot
+                    .as_ref()
+                    .map(|s| {
+                        if s.hard_capacity > 0.0 {
+                            ((s.soft_in_use / s.hard_capacity) * 100.0).round() as u64
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0),
+            );
+
+            if wifi_history.len() == HISTORY_LEN {
+                wifi_history.pop_front();
+            }
+            wifi_history.push_back(
+                wifi_snapshot
+                    .as_ref()
+                    .map(|s| s.hard_throughput.round() as u64)
+                    .unwrap_or(0),
+            );
+
+            if disk_history.len() == HISTORY_LEN {
+                disk_history.pop_front();
+            }
+            disk_history.push_back(
+                disk_snapshot
+                    .as_ref()
+                    .map(|s| {
+                        if s.hard_capacity > 0 {
+                            ((s.hard_capacity_in_use / s.hard_capacity) * 100) as u64
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0),
+            );
+        }
 
         terminal.draw(|f| {
             let layout = Layout::default()
@@ -245,7 +273,10 @@ async fn main() -> Result<()> {
                 tab_label("Your Activity", active_tab == ActiveTab::Activity),
                 tab_label("Performance", active_tab == ActiveTab::Performance),
                 Span::raw(" │ "),
-                Span::styled("[Tab] switch   [↑↓] pilih util   [q] exit", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "[Tab] switch   [↑↓] pilih util   [q] exit",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]))
             .block(Block::bordered());
             f.render_widget(tabs, layout[0]);
@@ -260,36 +291,54 @@ async fn main() -> Result<()> {
                     let wpm_data = wpm_data_slice(&wpm_history);
                     let process_data = wpm_data_slice(&process_history);
 
-                    let metric_row = |label: &str, value: String, color: Color, area: Rect| -> (Paragraph, std::rc::Rc<[Rect]>) {
+                    let metric_row = |label: &str,
+                                      value: String,
+                                      color: Color,
+                                      area: Rect|
+                     -> (Paragraph, std::rc::Rc<[Rect]>) {
                         let cols = Layout::default()
                             .direction(Direction::Horizontal)
                             .constraints([Constraint::Length(28), Constraint::Min(0)])
                             .split(area);
                         let text = Paragraph::new(Line::from(vec![
-                            Span::styled(format!("{label:<16}"), Style::default().fg(Color::DarkGray)),
-                            Span::styled(value, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                format!("{label:<16}"),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                            Span::styled(
+                                value,
+                                Style::default().fg(color).add_modifier(Modifier::BOLD),
+                            ),
                         ]));
                         (text, cols)
                     };
 
-                    let (text, cols) = metric_row("Typing Speed", format!("{wpm_score} WPM"), Color::Cyan, rows[0]);
+                    let (text, cols) =
+                        metric_row("Typing Speed", format!("{wpm_score} WPM"), Color::Cyan, rows[0]);
                     f.render_widget(text, cols[0]);
                     f.render_widget(
-                        Sparkline::default().data(&wpm_data).style(Style::default().fg(Color::Cyan)),
+                        Sparkline::default()
+                            .data(&wpm_data)
+                            .style(Style::default().fg(Color::Cyan)),
                         cols[1],
                     );
 
-                    let (text, _) = metric_row("Active Window", running_app.clone(), Color::Magenta, rows[1]);
+                    let (text, _) =
+                        metric_row("Active Window", running_app.clone(), Color::Magenta, rows[1]);
                     f.render_widget(text, rows[1]);
 
-                    let (text, cols) = metric_row("Processes", format!("{current_process}"), Color::Yellow, rows[2]);
+                    let (text, cols) =
+                        metric_row("Processes", format!("{current_process}"), Color::Yellow, rows[2]);
                     f.render_widget(text, cols[0]);
                     f.render_widget(
-                        Sparkline::default().data(&process_data).style(Style::default().fg(Color::Yellow)),
+                        Sparkline::default()
+                            .data(&process_data)
+                            .style(Style::default().fg(Color::Yellow)),
                         cols[1],
                     );
 
-                    let (text, _) = metric_row("Uptime", format!("{uptime_secs}s"), Color::Blue, rows[3]);
+                    let (text, _) =
+                        metric_row("Uptime", format!("{uptime_secs}s"), Color::Blue, rows[3]);
                     f.render_widget(text, rows[3]);
                 }
                 ActiveTab::Performance => {
@@ -299,22 +348,41 @@ async fn main() -> Result<()> {
                         .split(layout[1]);
 
                     // ---------------- KIRI (30%): daftar util yang bisa dipilih ----------------
-                    let menu_style = |item: PerfMenu, enabled: bool| -> Style {
+                    let menu_style = |item: PerfMenu| -> Style {
                         if perf_menu == item {
-                            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
-                        } else if enabled {
-                            Style::default().fg(Color::White)
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD)
                         } else {
-                            Style::default().fg(Color::DarkGray)
+                            Style::default().fg(Color::White)
                         }
                     };
-                    let arrow = |item: PerfMenu| -> &'static str { if perf_menu == item { "▶ " } else { "  " } };
+                    let arrow = |item: PerfMenu| -> &'static str {
+                        if perf_menu == item {
+                            "▶ "
+                        } else {
+                            "  "
+                        }
+                    };
 
                     let menu_items = vec![
-                        Line::from(Span::styled(format!("{}CPU        ", arrow(PerfMenu::Cpu)), menu_style(PerfMenu::Cpu, true))),
-                        Line::from(Span::styled(format!("{}Memory     ", arrow(PerfMenu::Memory)), menu_style(PerfMenu::Memory, true))),
-                        Line::from(Span::styled(format!("{}Disk       ", arrow(PerfMenu::Disk)), menu_style(PerfMenu::Disk, false))),
-                        Line::from(Span::styled(format!("{}WiFi       ", arrow(PerfMenu::Wifi)), menu_style(PerfMenu::Wifi, false))),
+                        Line::from(Span::styled(
+                            format!("{}CPU        ", arrow(PerfMenu::Cpu)),
+                            menu_style(PerfMenu::Cpu),
+                        )),
+                        Line::from(Span::styled(
+                            format!("{}Memory     ", arrow(PerfMenu::Memory)),
+                            menu_style(PerfMenu::Memory),
+                        )),
+                        Line::from(Span::styled(
+                            format!("{}Disk       ", arrow(PerfMenu::Disk)),
+                            menu_style(PerfMenu::Disk),
+                        )),
+                        Line::from(Span::styled(
+                            format!("{}WiFi       ", arrow(PerfMenu::Wifi)),
+                            menu_style(PerfMenu::Wifi),
+                        )),
                     ];
                     let menu = Paragraph::new(menu_items).block(Block::bordered().title(" Utilities "));
                     f.render_widget(menu, sections[0]);
@@ -324,10 +392,15 @@ async fn main() -> Result<()> {
                         PerfMenu::Cpu => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
-                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .constraints([
+                                    Constraint::Length(3),
+                                    Constraint::Min(10),
+                                    Constraint::Min(0),
+                                ])
                                 .split(sections[1]);
 
-                            let usage_percent = cpu_snapshot.as_ref().map(|s| s.soft_utilization).unwrap_or(0.0);
+                            let usage_percent =
+                                cpu_snapshot.as_ref().map(|s| s.soft_utilization).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
                                 .block(Block::bordered().title(" CPU Usage "))
                                 .gauge_style(Style::default().fg(Color::Cyan))
@@ -365,42 +438,84 @@ async fn main() -> Result<()> {
 
                             let detail_text: Vec<Line> = if let Some(snapshot) = &cpu_snapshot {
                                 vec![
-                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(Span::styled(
+                                        "Software (live)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
                                     Line::from(format!("Processes        : {}", snapshot.soft_processes)),
                                     Line::from(format!("Threads          : {}", snapshot.soft_threads)),
                                     Line::from(format!("Handles          : {}", snapshot.soft_handles)),
-                                    Line::from(format!("Speed sekarang   : {:.0} MHz", snapshot.soft_speed_clock)),
+                                    Line::from(format!(
+                                        "Speed sekarang   : {:.0} MHz",
+                                        snapshot.soft_speed_clock
+                                    )),
                                     Line::from(format!("Uptime           : {}", snapshot.soft_uptime)),
                                     Line::from(""),
-                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
-                                    Line::from(format!("Base speed       : {:.0} MHz", snapshot.hard_base_speed)),
+                                    Line::from(Span::styled(
+                                        "Hardware (statis)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
+                                    Line::from(format!(
+                                        "Base speed       : {:.0} MHz",
+                                        snapshot.hard_base_speed
+                                    )),
                                     Line::from(format!("Sockets          : {}", snapshot.hard_sockets)),
                                     Line::from(format!("Cores            : {}", snapshot.hard_cores)),
-                                    Line::from(format!("Logical procs    : {}", snapshot.hard_logical_processors)),
+                                    Line::from(format!(
+                                        "Logical procs    : {}",
+                                        snapshot.hard_logical_processors
+                                    )),
                                     Line::from(format!(
                                         "Virtualization   : {}",
-                                        if snapshot.hard_virtualization { "Enabled" } else { "Disabled" }
+                                        if snapshot.hard_virtualization {
+                                            "Enabled"
+                                        } else {
+                                            "Disabled"
+                                        }
                                     )),
-                                    Line::from(format!("L1 cache         : {:.0} KB", snapshot.hard_l1_cache)),
-                                    Line::from(format!("L2 cache         : {:.0} KB", snapshot.hard_l2_cache)),
-                                    Line::from(format!("L3 cache         : {:.0} KB", snapshot.hard_l3_cache)),
+                                    Line::from(format!(
+                                        "L1 cache         : {:.0} KB",
+                                        snapshot.hard_l1_cache
+                                    )),
+                                    Line::from(format!(
+                                        "L2 cache         : {:.0} KB",
+                                        snapshot.hard_l2_cache
+                                    )),
+                                    Line::from(format!(
+                                        "L3 cache         : {:.0} KB",
+                                        snapshot.hard_l3_cache
+                                    )),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled("Menunggu data CPU pertama...", Style::default().fg(Color::DarkGray)))]
+                                vec![Line::from(Span::styled(
+                                    "Menunggu data CPU pertama...",
+                                    Style::default().fg(Color::DarkGray),
+                                ))]
                             };
-                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            let detail_panel =
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
                         PerfMenu::Memory => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
-                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .constraints([
+                                    Constraint::Length(3),
+                                    Constraint::Min(10),
+                                    Constraint::Min(0),
+                                ])
                                 .split(sections[1]);
 
                             let usage_percent = ram_snapshot
                                 .as_ref()
-                                .map(|s| if s.hard_capacity > 0.0 { (s.soft_in_use / s.hard_capacity) * 100.0 } else { 0.0 })
+                                .map(|s| {
+                                    if s.hard_capacity > 0.0 {
+                                        (s.soft_in_use / s.hard_capacity) * 100.0
+                                    } else {
+                                        0.0
+                                    }
+                                })
                                 .unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
                                 .block(Block::bordered().title(" RAM Usage "))
@@ -439,36 +554,78 @@ async fn main() -> Result<()> {
 
                             let detail_text: Vec<Line> = if let Some(snapshot) = &ram_snapshot {
                                 vec![
-                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(Span::styled(
+                                        "Software (live)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
                                     Line::from(format!("In use           : {:.2} GB", snapshot.soft_in_use)),
-                                    Line::from(format!("Available        : {:.2} GB", snapshot.soft_available)),
-                                    Line::from(format!("Hardware reserved: {:.2} GB", snapshot.soft_hardware_reserve)),
-                                    Line::from(format!("Committed in use : {:.2} GB", snapshot.soft_in_commited)),
-                                    Line::from(format!("Committed avail  : {:.2} GB", snapshot.soft_available_commited)),
+                                    Line::from(format!(
+                                        "Available        : {:.2} GB",
+                                        snapshot.soft_available
+                                    )),
+                                    Line::from(format!(
+                                        "Hardware reserved: {:.2} GB",
+                                        snapshot.soft_hardware_reserve
+                                    )),
+                                    Line::from(format!(
+                                        "Committed in use : {:.2} GB",
+                                        snapshot.soft_in_commited
+                                    )),
+                                    Line::from(format!(
+                                        "Committed avail  : {:.2} GB",
+                                        snapshot.soft_available_commited
+                                    )),
                                     Line::from(format!("Cached           : {:.2} GB", snapshot.soft_cached)),
-                                    Line::from(format!("Paged pool       : {:.2} GB", snapshot.soft_page_pool)),
-                                    Line::from(format!("Non-paged pool   : {:.2} GB", snapshot.soft_non_paged_pool)),
+                                    Line::from(format!(
+                                        "Paged pool       : {:.2} GB",
+                                        snapshot.soft_page_pool
+                                    )),
+                                    Line::from(format!(
+                                        "Non-paged pool   : {:.2} GB",
+                                        snapshot.soft_non_paged_pool
+                                    )),
                                     Line::from(""),
-                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
-                                    Line::from(format!("Capacity         : {:.2} GB", snapshot.hard_capacity)),
+                                    Line::from(Span::styled(
+                                        "Hardware (statis)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
+                                    Line::from(format!(
+                                        "Capacity         : {:.2} GB",
+                                        snapshot.hard_capacity
+                                    )),
                                     Line::from(format!("Speed            : {} MHz", snapshot.hard_speed)),
-                                    Line::from(format!("Slots terpakai   : {}", snapshot.hard_slots_used)),
-                                    Line::from(format!("Form factor      : {}", snapshot.hard_form_factor)),
+                                    Line::from(format!(
+                                        "Slots terpakai   : {}",
+                                        snapshot.hard_slots_used
+                                    )),
+                                    Line::from(format!(
+                                        "Form factor      : {}",
+                                        snapshot.hard_form_factor
+                                    )),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled("Menunggu data RAM pertama...", Style::default().fg(Color::DarkGray)))]
+                                vec![Line::from(Span::styled(
+                                    "Menunggu data RAM pertama...",
+                                    Style::default().fg(Color::DarkGray),
+                                ))]
                             };
-                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            let detail_panel =
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
                         PerfMenu::Disk => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
-                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .constraints([
+                                    Constraint::Length(3),
+                                    Constraint::Min(10),
+                                    Constraint::Min(0),
+                                ])
                                 .split(sections[1]);
 
-                            let usage_percent = disk_snapshot.as_ref().map(|s| s.soft_active_time).unwrap_or(0.0);
+                            let usage_percent =
+                                disk_snapshot.as_ref().map(|s| s.soft_active_time).unwrap_or(0.0);
                             let usage_gauge = Gauge::default()
                                 .block(Block::bordered().title(" Disk Active Time "))
                                 .gauge_style(Style::default().fg(Color::Yellow))
@@ -506,42 +663,72 @@ async fn main() -> Result<()> {
 
                             let detail_text: Vec<Line> = if let Some(snapshot) = &disk_snapshot {
                                 vec![
-                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
-                                    Line::from(format!("Active time      : {:.1}%", snapshot.soft_active_time)),
-                                    Line::from(format!("Read speed       : {:.2} MB/s", snapshot.soft_read_speed)),
-                                    Line::from(format!("Write speed      : {:.2} MB/s", snapshot.soft_write_speed)),
-                                    Line::from(format!("Avg response time: {:.2} ms", snapshot.soft_average_response_time)),
+                                    Line::from(Span::styled(
+                                        "Software (live)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
+                                    Line::from(format!(
+                                        "Active time      : {:.1}%",
+                                        snapshot.soft_active_time
+                                    )),
+                                    Line::from(format!(
+                                        "Read speed       : {:.2} MB/s",
+                                        snapshot.soft_read_speed
+                                    )),
+                                    Line::from(format!(
+                                        "Write speed      : {:.2} MB/s",
+                                        snapshot.soft_write_speed
+                                    )),
+                                    Line::from(format!(
+                                        "Avg response time: {:.2} ms",
+                                        snapshot.soft_average_response_time
+                                    )),
                                     Line::from(""),
-                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(Span::styled(
+                                        "Hardware (statis)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
                                     Line::from(format!("Capacity         : {} GB", snapshot.hard_capacity)),
-                                    Line::from(format!("Formatted        : {} GB", snapshot.hard_formatted)),
+                                    Line::from(format!(
+                                        "Formatted        : {} GB",
+                                        snapshot.hard_formatted
+                                    )),
                                     Line::from(format!(
                                         "System disk      : {}",
-                                        if snapshot.hard_system_disk { "Yes" } else { "No" }
+                                        if snapshot.hard_system_disk {
+                                            "Yes"
+                                        } else {
+                                            "No"
+                                        }
                                     )),
                                     Line::from(format!("Type             : {}", snapshot.hard_type)),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled("Menunggu data Disk pertama...", Style::default().fg(Color::DarkGray)))]
+                                vec![Line::from(Span::styled(
+                                    "Menunggu data Disk pertama...",
+                                    Style::default().fg(Color::DarkGray),
+                                ))]
                             };
-                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            let detail_panel =
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
 
                         PerfMenu::Wifi => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
-                                .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Min(0)])
+                                .constraints([
+                                    Constraint::Length(3),
+                                    Constraint::Min(10),
+                                    Constraint::Min(0),
+                                ])
                                 .split(sections[1]);
 
-                            let throughput = wifi_snapshot.as_ref().map(|s| s.hard_throughput).unwrap_or(0.0);
-                            // Throughput itu satuannya Mbps, bukan persen (0-100), jadi Gauge
-                            // gak pas dipakai apa adanya. Solusinya: tetap tampilkan Gauge tapi
-                            // di-skala relatif ke throughput_max (dianggap 100 Mbps sebagai acuan
-                            // "penuh" — sesuaikan angka ini kalau adapter WiFi kamu bisa lebih
-                            // cepat dari itu, misal WiFi 6 bisa >600 Mbps).
+                            let throughput =
+                                wifi_snapshot.as_ref().map(|s| s.hard_throughput).unwrap_or(0.0);
                             const THROUGHPUT_MAX: f32 = 100.0;
-                            let gauge_percent = ((throughput / THROUGHPUT_MAX) * 100.0).clamp(0.0, 100.0);
+                            let gauge_percent =
+                                ((throughput / THROUGHPUT_MAX) * 100.0).clamp(0.0, 100.0);
                             let usage_gauge = Gauge::default()
                                 .block(Block::bordered().title(" WiFi Throughput "))
                                 .gauge_style(Style::default().fg(Color::Magenta))
@@ -566,10 +753,8 @@ async fn main() -> Result<()> {
                                 .title(Span::styled("Waktu", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, HISTORY_LEN as f64])
                                 .labels(["awal", "sekarang"]);
-                            // Y axis history WiFi TIDAK di-hardcode 0-100 seperti CPU/RAM/Disk,
-                            // karena satuannya Mbps dan bisa jauh lebih tinggi dari 100.
-                            // Dibuat dinamis mengikuti nilai maksimum yang pernah tercatat.
-                            let wifi_y_max = wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
+                            let wifi_y_max =
+                                wifi_history.iter().map(|&v| v as f64).fold(10.0_f64, f64::max);
                             let y_axis = Axis::default()
                                 .title(Span::styled("Mbps", Style::default().fg(Color::DarkGray)))
                                 .bounds([0.0, wifi_y_max])
@@ -587,24 +772,58 @@ async fn main() -> Result<()> {
 
                             let detail_text: Vec<Line> = if let Some(snapshot) = &wifi_snapshot {
                                 vec![
-                                    Line::from(Span::styled("Software (live)", Style::default().add_modifier(Modifier::UNDERLINED))),
+                                    Line::from(Span::styled(
+                                        "Software (live)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
                                     Line::from(format!("SSID             : {}", snapshot.soft_ssid)),
-                                    Line::from(format!("Connection type  : {}", snapshot.soft_connection_type)),
-                                    Line::from(format!("Signal strength  : {}%", snapshot.soft_signal_strength)),
-                                    Line::from(format!("IPv4 address     : {}", snapshot.soft_ipv4_address)),
-                                    Line::from(format!("IPv6 address     : {}", snapshot.soft_ipv6_address)),
+                                    Line::from(format!(
+                                        "Connection type  : {}",
+                                        snapshot.soft_connection_type
+                                    )),
+                                    Line::from(format!(
+                                        "Signal strength  : {}%",
+                                        snapshot.soft_signal_strength
+                                    )),
+                                    Line::from(format!(
+                                        "IPv4 address     : {}",
+                                        snapshot.soft_ipv4_address
+                                    )),
+                                    Line::from(format!(
+                                        "IPv6 address     : {}",
+                                        snapshot.soft_ipv6_address
+                                    )),
                                     Line::from(format!("Adapter          : {}", snapshot.soft_adapter_name)),
                                     Line::from(""),
-                                    Line::from(Span::styled("Hardware (statis)", Style::default().add_modifier(Modifier::UNDERLINED))),
-                                    Line::from(format!("Interface        : {}", snapshot.hard_name_wireless_lan)),
-                                    Line::from(format!("Throughput       : {:.2} Mbps", snapshot.hard_throughput)),
-                                    Line::from(format!("Send (Tx)        : {:.2} Mbps", snapshot.hard_send)),
-                                    Line::from(format!("Receive (Rx)     : {:.2} Mbps", snapshot.hard_receive)),
+                                    Line::from(Span::styled(
+                                        "Hardware (statis)",
+                                        Style::default().add_modifier(Modifier::UNDERLINED),
+                                    )),
+                                    Line::from(format!(
+                                        "Interface        : {}",
+                                        snapshot.hard_name_wireless_lan
+                                    )),
+                                    Line::from(format!(
+                                        "Throughput       : {:.2} Mbps",
+                                        snapshot.hard_throughput
+                                    )),
+                                    Line::from(format!(
+                                        "Send (Tx)        : {:.2} Mbps",
+                                        snapshot.hard_send
+                                    )),
+                                    Line::from(format!(
+                                        "Receive (Rx)     : {:.2} Mbps",
+                                        snapshot.hard_receive
+                                    )),
                                 ]
                             } else {
-                                vec![Line::from(Span::styled("Menunggu data WiFi pertama...", Style::default().fg(Color::DarkGray)))]
+                                vec![Line::from(Span::styled(
+                                    "Menunggu data WiFi pertama...",
+                                    Style::default().fg(Color::DarkGray),
+                                ))]
                             };
-                            let detail_panel = Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
+                            let detail_panel =
+                                Paragraph::new(detail_text).block(Block::bordered().title(" Detail "));
                             f.render_widget(detail_panel, detail_rows[2]);
                         }
                     }
@@ -612,45 +831,40 @@ async fn main() -> Result<()> {
             }
         })?;
 
-
-        if event::poll(Duration::from_millis(10))? {
+        // Tangani event keyboard secara non-blocking
+        while event::poll(Duration::from_millis(0))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-                    KeyCode::Tab => {
-                        active_tab = match active_tab {
-                            ActiveTab::Activity => ActiveTab::Performance,
-                            ActiveTab::Performance => ActiveTab::Activity,
-                        };
-                    }
-                    KeyCode::Up if active_tab == ActiveTab::Performance => {
-                        if current_menu > 0 {
-                            current_menu -= 1;
+                // HANYA proses saat key ditekan (mengabaikan release & repeat untuk mencegah bug loncat 2x)
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            return Ok(())
                         }
-                    }
-                    KeyCode::Down if active_tab == ActiveTab::Performance => {
-                        if current_menu < 3 {
-                            current_menu += 1;
+                        KeyCode::Tab => {
+                            active_tab = match active_tab {
+                                ActiveTab::Activity => ActiveTab::Performance,
+                                ActiveTab::Performance => ActiveTab::Activity,
+                            };
                         }
+                        KeyCode::Up if active_tab == ActiveTab::Performance => {
+                            perf_menu = perf_menu.prev();
+                        }
+                        KeyCode::Down if active_tab == ActiveTab::Performance => {
+                            perf_menu = perf_menu.next();
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-
-                // Update perf_menu secara otomatis berdasarkan nilai current_menu
-               perf_menu = match current_menu {
-                    0 => PerfMenu::Cpu,   // <- harusnya Cpu
-                    1 => PerfMenu::Memory,
-                    2 => PerfMenu::Disk,
-                    _ => PerfMenu::Wifi,
-                };
             }
         }
     }
 
     // 8) TEARDOWN TASKS
-    mutator_handle.abort();
-    reactive_handle.abort();
-
-    Ok(())
+    #[allow(unreachable_code)]
+    {
+        mutator_handle.abort();
+        reactive_handle.abort();
+        Ok(())
+    }
 }
