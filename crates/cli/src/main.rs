@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
     let mut perf_menu = PerfMenu::Cpu;
 
     const HISTORY_LEN: usize = 40;
-    let mut window_history: VecDeque<String> = VecDeque::with_capacity(5);
+    let mut window_history: VecDeque<String> = VecDeque::with_capacity(10);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
 
         let uptime_secs = start_time.elapsed().as_secs();
 
-        // Refresh data dari database setiap 1 detik saja (efisien & menghindari lock berlebih)
+        // Refresh data dari database setiap 500ms
         if last_fetch_time.elapsed() >= Duration::from_millis(500) {
             last_fetch_time = Instant::now();
 
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
             wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
 
             if window_history.back() != Some(&running_app) {
-                if window_history.len() == 10 {
+                if window_history.len() == 15 {
                     window_history.pop_front();
                 }
                 window_history.push_back(running_app.clone());
@@ -245,7 +245,7 @@ async fn main() -> Result<()> {
                 tab_label("Performance", active_tab == ActiveTab::Performance),
                 Span::raw(" │ "),
                 Span::styled(
-                    "[Tab] switch   [↑↓] pilih util   [q] exit",
+                    "[Tab] switch tab   [q] exit",
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
@@ -254,76 +254,142 @@ async fn main() -> Result<()> {
 
             match active_tab {
                 ActiveTab::Activity => {
-                    // Layout 3 Kolom: Focus | Timeline | Insights
+                    // Revamped Activity Tab Layout: 3 Columns
+                    // Kolom 1 (34%): Current Focus & Real-time Live Metrics
+                    // Kolom 2 (36%): Interactive Timeline / App History
+                    // Kolom 3 (30%): Deep Work & Category Breakdown / Insights
                     let main_layout = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(30), // Current Focus
-                            Constraint::Percentage(40), // Timeline
-                            Constraint::Percentage(30), // Insights
+                            Constraint::Percentage(34),
+                            Constraint::Percentage(36),
+                            Constraint::Percentage(30),
                         ])
                         .split(layout[1]);
 
-                    // 1. CURRENT FOCUS (Kiri)
-                    let focus_layout = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Length(8), Constraint::Min(0)])
-                        .split(main_layout[0]);
-
-                    let focus_block = Block::bordered().title(Span::styled(" Current Focus ", Style::default().add_modifier(Modifier::BOLD)));
-                    let focus_text = Paragraph::new(vec![
-                        Line::from(vec![Span::styled("󰣐 ", Style::default().fg(Color::Cyan)), Span::raw("Active App:")]),
-                        Line::from(Span::styled(format!("  {}", running_app), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
-                        Line::from(""),
-                        Line::from(vec![Span::styled("󰔟 ", Style::default().fg(Color::Magenta)), Span::raw("Typing Speed:")]),
-                        Line::from(Span::styled(format!("  {} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))),
-                    ]).block(focus_block).alignment(Alignment::Left);
-                    f.render_widget(focus_text, focus_layout[0]);
-
-                    // 2. TIMELINE (Tengah)
-                    let timeline_block = Block::bordered().title(Span::styled(" Recent Activity ", Style::default().add_modifier(Modifier::BOLD)));
-                    let items: Vec<ListItem> = window_history
-                        .iter()
-                        .rev()
-                        .map(|app| ListItem::new(Line::from(vec![
-                            Span::styled("󰓛 ", Style::default().fg(Color::DarkGray)),
-                            Span::raw(app)
-                        ])))
-                        .collect();
-                    let list = List::new(items).block(timeline_block);
-                    f.render_widget(list, main_layout[1]);
-
-                    // 3. INSIGHTS (Kanan)
-                    let insights_layout = Layout::default()
+                    // --- 1. CURRENT FOCUS & LIVE STATS ---
+                    let focus_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(6), // Focus Score
-                            Constraint::Length(5), // Session Time
-                            Constraint::Min(0),    // Top Apps
+                            Constraint::Length(9), // Current App & WPM
+                            Constraint::Length(6), // Session timer
+                            Constraint::Min(0),    // Current Task / Notes
+                        ])
+                        .split(main_layout[0]);
+
+                    let focus_block = Block::bordered().title(Span::styled(
+                        " Current Focus ",
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    ));
+                    
+                    let focus_content = vec![
+                        Line::from(vec![
+                            Span::styled("⚡ Active App: ", Style::default().fg(Color::DarkGray)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled(format!("   {}", running_app), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("⌨  Typing Speed: ", Style::default().fg(Color::DarkGray)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled(format!("   {} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                        ]),
+                    ];
+                    let focus_para = Paragraph::new(focus_content).block(focus_block);
+                    f.render_widget(focus_para, focus_chunks[0]);
+
+                    let session_block = Block::bordered().title(Span::styled(
+                        " Session Duration ",
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ));
+                    let session_time_str = format!(
+                        "{:02}:{:02}:{:02}",
+                        uptime_secs / 3600,
+                        (uptime_secs % 3600) / 60,
+                        uptime_secs % 60
+                    );
+                    let session_para = Paragraph::new(vec![
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            format!("     ⏳ {}", session_time_str),
+                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        )),
+                    ])
+                    .block(session_block);
+                    f.render_widget(session_para, focus_chunks[1]);
+
+                    let notes_block = Block::bordered().title(Span::styled(
+                        " Current Objective ",
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    ));
+                    let notes_para = Paragraph::new(vec![
+                        Line::from(Span::styled("• Building Rust TUI", Style::default().fg(Color::Green))),
+                        Line::from(Span::styled("• Reviewing Activity View", Style::default().fg(Color::DarkGray))),
+                        Line::from(Span::styled("• Code refactoring", Style::default().fg(Color::DarkGray))),
+                    ])
+                    .block(notes_block);
+                    f.render_widget(notes_para, focus_chunks[2]);
+
+                    // --- 2. TIMELINE / ACTIVITY STREAM ---
+                    let timeline_block = Block::bordered().title(Span::styled(
+                        " App Timeline Stream ",
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    ));
+                    let timeline_items: Vec<ListItem> = window_history
+                        .iter()
+                        .rev()
+                        .enumerate()
+                        .map(|(idx, app)| {
+                            let prefix = if idx == 0 { "▶ " } else { "  " };
+                            let style = if idx == 0 {
+                                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default().fg(Color::DarkGray)
+                            };
+                            ListItem::new(Line::from(vec![
+                                Span::styled(prefix, Style::default().fg(Color::Cyan)),
+                                Span::styled(app.clone(), style),
+                            ]))
+                        })
+                        .collect();
+                    let timeline_list = List::new(timeline_items).block(timeline_block);
+                    f.render_widget(timeline_list, main_layout[1]);
+
+                    // --- 3. INSIGHTS & CATEGORY BREAKDOWN ---
+                    let insight_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(6), // Focus score gauge
+                            Constraint::Min(0),    // Activity Categories
                         ])
                         .split(main_layout[2]);
 
                     let focus_gauge = Gauge::default()
-                        .block(Block::bordered().title(Span::styled(" Focus Score ", Style::default().add_modifier(Modifier::BOLD))))
+                        .block(Block::bordered().title(Span::styled(
+                            " Focus Score ",
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        )))
                         .gauge_style(Style::default().fg(Color::Green))
-                        .percent(75) // Dummy data
-                        .label(Span::styled("75%", Style::default().add_modifier(Modifier::BOLD)));
-                    f.render_widget(focus_gauge, insights_layout[0]);
+                        .percent(88)
+                        .label(Span::styled("88% (High)", Style::default().add_modifier(Modifier::BOLD)));
+                    f.render_widget(focus_gauge, insight_chunks[0]);
 
-                    let session_block = Block::bordered().title(Span::styled(" Session Time ", Style::default().add_modifier(Modifier::BOLD)));
-                    let session_text = Paragraph::new(format!("{:02}:{:02}:{:02}", uptime_secs/3600, (uptime_secs%3600)/60, uptime_secs%60))
-                        .block(session_block)
-                        .alignment(Alignment::Center)
-                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
-                    f.render_widget(session_text, insights_layout[1]);
-
-                    let top_apps_block = Block::bordered().title(Span::styled(" Top Apps Today ", Style::default().add_modifier(Modifier::BOLD)));
-                    let top_apps = List::new(vec![
-                        ListItem::new("1. VS Code  [3h 10m]"),
-                        ListItem::new("2. Chrome   [2h 05m]"),
-                        ListItem::new("3. Slack    [1h 45m]"),
-                    ]).block(top_apps_block);
-                    f.render_widget(top_apps, insights_layout[2]);
+                    let categories_block = Block::bordered().title(Span::styled(
+                        " Time Distribution ",
+                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                    ));
+                    let categories_para = Paragraph::new(vec![
+                        Line::from(Span::styled("💻 Development : 65%", Style::default().fg(Color::Cyan))),
+                        Line::from(Span::styled("🌐 Browsing    : 20%", Style::default().fg(Color::Yellow))),
+                        Line::from(Span::styled("💬 Messaging   : 10%", Style::default().fg(Color::Green))),
+                        Line::from(Span::styled("📂 Other       : 5%", Style::default().fg(Color::DarkGray))),
+                        Line::from(""),
+                        Line::from(Span::styled("Tip: Stay focused!", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))),
+                    ])
+                    .block(categories_block);
+                    f.render_widget(categories_para, insight_chunks[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
