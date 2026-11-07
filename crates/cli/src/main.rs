@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
         let uptime_secs = start_time.elapsed().as_secs();
 
         // Refresh data dari database setiap 1 detik saja (efisien & menghindari lock berlebih)
-        if last_fetch_time.elapsed() >= Duration::from_secs(1) {
+        if last_fetch_time.elapsed() >= Duration::from_millis(500) {
             last_fetch_time = Instant::now();
 
             wpm_score = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
