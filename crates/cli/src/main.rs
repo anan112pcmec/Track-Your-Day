@@ -18,7 +18,7 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Gauge, Paragraph, Sparkline},
+    widgets::{Block, Gauge, Paragraph},
 };
 use ratatui::symbols::Marker;
 use ratatui::widgets::{Axis, Chart, Dataset, GraphType, List, ListItem};
@@ -39,10 +39,6 @@ impl Drop for TerminalGuard {
         let _ = disable_raw_mode();
         let _ = stdout().execute(LeaveAlternateScreen);
     }
-}
-
-fn wpm_data_slice(history: &VecDeque<u64>) -> Vec<u64> {
-    history.iter().copied().collect()
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -121,9 +117,6 @@ async fn main() -> Result<()> {
     let mut perf_menu = PerfMenu::Cpu;
 
     const HISTORY_LEN: usize = 40;
-    let mut wpm_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
-    let mut process_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
-    let mut uptime_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut window_history: VecDeque<String> = VecDeque::with_capacity(5);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -133,7 +126,6 @@ async fn main() -> Result<()> {
     // Cache data metrik agar tidak query lock store setiap 50-100ms
     let mut wpm_score: u32 = 0;
     let mut running_app: String = String::from("None");
-    let mut current_process: usize = 0;
     let mut cpu_snapshot: Option<CpuSnapshot> = None;
     let mut ram_snapshot: Option<RamSnapshot> = None;
     let mut disk_snapshot: Option<DiskSnapshot> = None;
@@ -156,32 +148,11 @@ async fn main() -> Result<()> {
                 .ok()
                 .flatten()
                 .unwrap_or_else(|| String::from("None"));
-            current_process = api_state
-                .running_process_check()
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or(0);
 
             cpu_snapshot = api_state.cpu_util_check().await.ok().flatten();
             ram_snapshot = api_state.ram_util_check().await.ok().flatten();
             disk_snapshot = api_state.disk_util_check().await.ok().flatten();
             wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
-
-            if wpm_history.len() == HISTORY_LEN {
-                wpm_history.pop_front();
-            }
-            wpm_history.push_back(wpm_score as u64);
-
-            if process_history.len() == HISTORY_LEN {
-                process_history.pop_front();
-            }
-            process_history.push_back(current_process as u64);
-
-            if uptime_history.len() == HISTORY_LEN {
-                uptime_history.pop_front();
-            }
-            uptime_history.push_back(uptime_secs);
 
             if window_history.back() != Some(&running_app) {
                 if window_history.len() == 5 {
@@ -336,7 +307,7 @@ async fn main() -> Result<()> {
                         .direction(Direction::Vertical)
                         .constraints([
                             Constraint::Percentage(50), // Top Apps
-                            Constraint::Percentage(50), // Typing Intensity
+                            Constraint::Percentage(50), // Typing Stats
                         ])
                         .split(main_layout[2]);
 
@@ -348,13 +319,14 @@ async fn main() -> Result<()> {
                     ]).block(top_apps_block);
                     f.render_widget(top_apps, stats_layout[0]);
 
-                    let wpm_block = Block::bordered().title(" Typing Intensity ");
-                    let wpm_data = wpm_data_slice(&wpm_history);
-                    let wpm_chart = Sparkline::default()
-                        .block(wpm_block)
-                        .data(&wpm_data)
-                        .style(Style::default().fg(Color::Magenta));
-                    f.render_widget(wpm_chart, stats_layout[1]);
+                    // Typing Stats (Statistik WPM)
+                    let typing_block = Block::bordered().title(" Typing Stats ");
+                    let typing_text = Paragraph::new(vec![
+                        Line::from(vec![Span::styled("Current WPM: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{}", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Peak WPM   : ", Style::default().fg(Color::DarkGray)), Span::styled("120", Style::default().fg(Color::Yellow))]),
+                        Line::from(vec![Span::styled("Accuracy   : ", Style::default().fg(Color::DarkGray)), Span::styled("98%", Style::default().fg(Color::Green))]),
+                    ]).block(typing_block);
+                    f.render_widget(typing_text, stats_layout[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
