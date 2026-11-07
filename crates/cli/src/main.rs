@@ -248,19 +248,19 @@ async fn main() -> Result<()> {
             let tab_label = |label: &str, is_active: bool| -> Span {
                 if is_active {
                     Span::styled(
-                        format!(" {label} "),
+                        format!(" [{label}] "),
                         Style::default()
                             .fg(Color::Black)
                             .bg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     )
                 } else {
-                    Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray))
+                    Span::styled(format!("  {label}  "), Style::default().fg(Color::DarkGray))
                 }
             };
             let tabs = Paragraph::new(Line::from(vec![
                 Span::styled(
-                    " ACTIVITY PULSE ",
+                    " ❖ ACTIVITY PULSE ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled("│", Style::default().fg(Color::DarkGray)),
@@ -283,9 +283,6 @@ async fn main() -> Result<()> {
             match active_tab {
                 ActiveTab::Activity => {
                     // Professional 3-Column Asymmetric Dashboard Layout
-                    // Col 1 (30%): Identity & Profile
-                    // Col 2 (45%): Live Focus Session, Context, & Timeline Stream
-                    // Col 3 (25%): Realtime Telemetry & Environment
                     let cols = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
@@ -305,22 +302,22 @@ async fn main() -> Result<()> {
                         .split(cols[0]);
 
                     let profile_block = Block::default()
-                        .title(Span::styled(" OPERATOR ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [👤] OPERATOR PROFILE ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
 
                     let profile_text = vec![
-                        Line::from(vec![Span::styled("Name    ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Role    ", Style::default().fg(Color::DarkGray)), Span::styled("Principal Engineer", Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("Contact ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("GitHub  ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alexv", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Network ", Style::default().fg(Color::DarkGray)), Span::styled("IG @alex.dev", Style::default().fg(Color::Magenta))]),
+                        Line::from(vec![Span::styled("◇ Name    ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("◇ Role    ", Style::default().fg(Color::DarkGray)), Span::styled("Principal Engineer", Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("◇ Contact ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("◇ GitHub  ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alexv", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("◇ Network ", Style::default().fg(Color::DarkGray)), Span::styled("IG @alex.dev", Style::default().fg(Color::Magenta))]),
                     ];
                     f.render_widget(Paragraph::new(profile_text).block(profile_block), left_chunks[0]);
 
                     let bio_block = Block::default()
-                        .title(Span::styled(" MANIFESTO ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [★] MANIFESTO ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
@@ -330,7 +327,7 @@ async fn main() -> Result<()> {
                         Line::from(""),
                         Line::from(vec![
                             Span::styled("STATUS  ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("ACTIVE / FOCUSED", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                            Span::styled("[● ACTIVE / FOCUSED]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                         ]),
                     ];
                     f.render_widget(Paragraph::new(bio_text).block(bio_block), left_chunks[1]);
@@ -354,7 +351,7 @@ async fn main() -> Result<()> {
                     );
 
                     let session_block = Block::default()
-                        .title(Span::styled(" CURRENT FOCUS SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [⏱] CURRENT FOCUS SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
@@ -367,7 +364,7 @@ async fn main() -> Result<()> {
                     f.render_widget(Paragraph::new(session_text).block(session_block), mid_chunks[0]);
 
                     let insight_block = Block::default()
-                        .title(Span::styled(" WORKLOAD CONTEXT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [⚡] WORKLOAD CONTEXT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
@@ -375,24 +372,24 @@ async fn main() -> Result<()> {
                     let app_l = running_app.to_lowercase();
                     let insight_text = if app_l.contains("code") || app_l.contains("nvim") || app_l.contains("cursor") {
                         vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Software Architecture (IDE)", Style::default().fg(Color::Green))]),
-                            Line::from(vec![Span::styled("Language : ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript [Active]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Software Architecture [IDE]", Style::default().fg(Color::Green))]),
+                            Line::from(vec![Span::styled("Language : ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript [ACTIVE]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
                         ]
                     } else if app_l.contains("excel") || app_l.contains("word") || app_l.contains("powerpnt") {
                         vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Corporate / Formal Productivity", Style::default().fg(Color::Blue))]),
-                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Documentation & Quantitative Analysis", Style::default().fg(Color::White))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Corporate Productivity [OFFICE]", Style::default().fg(Color::Blue))]),
+                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Documentation & Analysis", Style::default().fg(Color::White))]),
                         ]
                     } else {
                         vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation Task", Style::default().fg(Color::DarkGray))]),
+                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation [IDLE]", Style::default().fg(Color::DarkGray))]),
                             Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Browsing & Multi-utility switching", Style::default().fg(Color::DarkGray))]),
                         ]
                     };
                     f.render_widget(Paragraph::new(insight_text).block(insight_block), mid_chunks[1]);
 
                     let timeline_block = Block::default()
-                        .title(Span::styled(" SESSION TIMELINE STREAM ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [≡] SESSION TIMELINE STREAM ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
@@ -402,7 +399,7 @@ async fn main() -> Result<()> {
                         .rev()
                         .enumerate()
                         .map(|(i, app)| {
-                            let indicator = if i == 0 { "▸ " } else { "  " };
+                            let indicator = if i == 0 { "[▶] " } else { "[-] " };
                             let style = if i == 0 {
                                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
                             } else {
@@ -426,20 +423,20 @@ async fn main() -> Result<()> {
                         .split(cols[2]);
 
                     let typing_block = Block::default()
-                        .title(Span::styled(" TYPING DYNAMICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [⌨] TYPING DYNAMICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
 
                     let typing_text = vec![
                         Line::from(vec![Span::styled("Speed    ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Accuracy ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [High]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Accuracy ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL]", Style::default().fg(Color::Green))]),
                         Line::from(vec![Span::styled("Raw Rate ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
                     ];
                     f.render_widget(Paragraph::new(typing_text).block(typing_block), right_chunks[0]);
 
                     let env_block = Block::default()
-                        .title(Span::styled(" ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [Ω] ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
@@ -448,10 +445,10 @@ async fn main() -> Result<()> {
                     let bw = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
                     
                     let env_text = vec![
-                        Line::from(vec![Span::styled("Battery  ", Style::default().fg(Color::DarkGray)), Span::styled("85% [AC Power]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Battery  ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER]", Style::default().fg(Color::Green))]),
                         Line::from(vec![Span::styled("Network  ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan))]),
                         Line::from(vec![Span::styled("Throughput", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("Audio    ", Style::default().fg(Color::DarkGray)), Span::styled("Active [65%]", Style::default().fg(Color::Yellow))]),
+                        Line::from(vec![Span::styled("Audio    ", Style::default().fg(Color::DarkGray)), Span::styled("Active [🔊 65%]", Style::default().fg(Color::Yellow))]),
                     ];
                     f.render_widget(Paragraph::new(env_text).block(env_block), right_chunks[1]);
                 }
@@ -474,9 +471,9 @@ async fn main() -> Result<()> {
                     };
                     let indicator = |item: PerfMenu| -> &'static str {
                         if perf_menu == item {
-                            "▸ "
+                            "[▶] "
                         } else {
-                            "  "
+                            "[ ] "
                         }
                     };
 
@@ -500,7 +497,7 @@ async fn main() -> Result<()> {
                     ];
                     let menu = Paragraph::new(menu_items).block(
                         Block::default()
-                            .title(Span::styled(" Subsystems ", Style::default().fg(Color::Cyan)))
+                            .title(Span::styled(" [⚙] Subsystems ", Style::default().fg(Color::Cyan)))
                             .borders(Borders::ALL)
                             .border_type(BorderType::Rounded)
                             .border_style(Style::default().fg(Color::DarkGray)),
@@ -524,7 +521,7 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" CPU Utilization ")
+                                        .title(" [#] CPU Utilization ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -559,7 +556,7 @@ async fn main() -> Result<()> {
                             let cpu_chart = Chart::new(vec![cpu_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -584,14 +581,14 @@ async fn main() -> Result<()> {
                                     )),
                                     Line::from(format!("Base Clock       : {:.0} MHz", snapshot.hard_base_speed)),
                                     Line::from(format!("Cores / Threads  : {} / {}", snapshot.hard_cores, snapshot.hard_logical_processors)),
-                                    Line::from(format!("Virtualization   : {}", if snapshot.hard_virtualization { "Enabled" } else { "Disabled" })),
+                                    Line::from(format!("Virtualization   : {}", if snapshot.hard_virtualization { "[ENABLED]" } else { "[DISABLED]" })),
                                 ]
                             } else {
                                 vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
                                     .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
@@ -621,7 +618,7 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" RAM Utilization ")
+                                        .title(" [#] RAM Utilization ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -656,7 +653,7 @@ async fn main() -> Result<()> {
                             let ram_chart = Chart::new(vec![ram_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -688,7 +685,7 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
                                     .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
@@ -710,7 +707,7 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" Disk Active Time ")
+                                        .title(" [#] Disk Active Time ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -745,7 +742,7 @@ async fn main() -> Result<()> {
                             let disk_chart = Chart::new(vec![disk_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -776,7 +773,7 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
                                     .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
@@ -799,7 +796,7 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" Wireless Throughput ")
+                                        .title(" [#] Wireless Throughput ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -834,7 +831,7 @@ async fn main() -> Result<()> {
                             let wifi_chart = Chart::new(vec![wifi_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
                                         .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
@@ -865,7 +862,7 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
                                     .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
