@@ -131,9 +131,12 @@ async fn main() -> Result<()> {
     let mut disk_snapshot: Option<DiskSnapshot> = None;
     let mut wifi_snapshot: Option<WiFiSnapshot> = None;
 
-    // Sesi tracking & state tambahan
+    // Sesi tracking & state tambahan (Bento Focus & Vibe)
     let mut session_start_time = Instant::now();
     let mut current_session_activity = String::from("Initializing workspace context");
+    let mut context_switches: usize = 0;
+    let mut last_recorded_app = String::new();
+    let mut deep_focus_streak_secs: u64 = 0;
 
     // 7) MAIN TUI LOOP
     loop {
@@ -154,8 +157,12 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|| String::from("None"));
 
             if fetched_app != running_app {
+                if !running_app.is_empty() && running_app != "None" {
+                    context_switches += 1;
+                }
                 running_app = fetched_app;
                 session_start_time = Instant::now();
+                deep_focus_streak_secs = 0;
                 
                 let app_lower = running_app.to_lowercase();
                 if app_lower.contains("code") || app_lower.contains("nvim") || app_lower.contains("cursor") {
@@ -169,6 +176,8 @@ async fn main() -> Result<()> {
                 } else {
                     current_session_activity = String::from("General workstation multitasking");
                 }
+            } else {
+                deep_focus_streak_secs = session_start_time.elapsed().as_secs();
             }
 
             cpu_snapshot = api_state.cpu_util_check().await.ok().flatten();
@@ -263,12 +272,12 @@ async fn main() -> Result<()> {
                     " ❖ ACTIVITY PULSE ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("│", Style::default().fg(Color::DarkGray)),
+                Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
                 tab_label("Activity Feed", active_tab == ActiveTab::Activity),
                 tab_label("System Metrics", active_tab == ActiveTab::Performance),
-                Span::styled("│", Style::default().fg(Color::DarkGray)),
+                Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    " [Tab] Toggle View   [q] Quit ",
+                    "[Tab] Toggle View   [q] Quit",
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
@@ -282,66 +291,78 @@ async fn main() -> Result<()> {
 
             match active_tab {
                 ActiveTab::Activity => {
-                    // Professional 3-Column Asymmetric Dashboard Layout
-                    let cols = Layout::default()
+                    // =========================================================================
+                    // BENTO GRID LAYOUT (Slim, Minimalist, Clean)
+                    // Root: 2 Columns (Left: Profile & Vibe / Telemetry | Right: Live Session & Analytics)
+                    // =========================================================================
+                    let root_cols = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Percentage(30),
-                            Constraint::Percentage(45),
-                            Constraint::Percentage(25),
-                        ])
+                        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
                         .split(layout[1]);
 
-                    // --- COLUMN 1: IDENTITY & PROFILE ---
-                    let left_chunks = Layout::default()
+                    // --- LEFT BENTO COLUMN ---
+                    let left_rows = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(10), // Profile card
-                            Constraint::Min(0),    // Bio & Philosophy
+                            Constraint::Length(8),  // Profile & Vibe Status
+                            Constraint::Length(7),  // Typing Dynamics
+                            Constraint::Min(0),     // Environment
                         ])
-                        .split(cols[0]);
+                        .split(root_cols[0]);
 
+                    // 1. Profile & Vibe Status
                     let profile_block = Block::default()
-                        .title(Span::styled(" [👤] OPERATOR PROFILE ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [👤] OPERATOR & VIBE ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-
                     let profile_text = vec![
-                        Line::from(vec![Span::styled("◇ Name    ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("◇ Role    ", Style::default().fg(Color::DarkGray)), Span::styled("Principal Engineer", Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("◇ Contact ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("◇ GitHub  ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alexv", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("◇ Network ", Style::default().fg(Color::DarkGray)), Span::styled("IG @alex.dev", Style::default().fg(Color::Magenta))]),
+                        Line::from(vec![Span::styled("Operator : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Role     : ", Style::default().fg(Color::DarkGray)), Span::styled("Principal Engineer", Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("Vibe     : ", Style::default().fg(Color::DarkGray)), Span::styled("\"Shipping clean Rust code\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))]),
                     ];
-                    f.render_widget(Paragraph::new(profile_text).block(profile_block), left_chunks[0]);
+                    f.render_widget(Paragraph::new(profile_text).block(profile_block), left_rows[0]);
 
-                    let bio_block = Block::default()
-                        .title(Span::styled(" [★] MANIFESTO ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                    // 2. Typing Dynamics Bento Box
+                    let typing_block = Block::default()
+                        .title(Span::styled(" [⌨] TYPING ANALYTICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-
-                    let bio_text = vec![
-                        Line::from(Span::styled("“Low latency, high throughput, zero friction engineering.”", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
-                        Line::from(""),
-                        Line::from(vec![
-                            Span::styled("STATUS  ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[● ACTIVE / FOCUSED]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                        ]),
+                    let typing_text = vec![
+                        Line::from(vec![Span::styled("Speed    : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("Accuracy : ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Raw Rate : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
                     ];
-                    f.render_widget(Paragraph::new(bio_text).block(bio_block), left_chunks[1]);
+                    f.render_widget(Paragraph::new(typing_text).block(typing_block), left_rows[1]);
 
-                    // --- COLUMN 2: LIVE SESSION, CONTEXT & TIMELINE ---
-                    let mid_chunks = Layout::default()
+                    // 3. Environment Bento Box
+                    let env_block = Block::default()
+                        .title(Span::styled(" [Ω] ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(Color::DarkGray));
+                    let ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Offline".to_string());
+                    let bw = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
+                    let env_text = vec![
+                        Line::from(vec![Span::styled("Battery  : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER]", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("Network  : ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("Bandwidth: ", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("Audio    : ", Style::default().fg(Color::DarkGray)), Span::styled("Active [🔊 65%]", Style::default().fg(Color::Yellow))]),
+                    ];
+                    f.render_widget(Paragraph::new(env_text).block(env_block), left_rows[2]);
+
+                    // --- RIGHT BENTO COLUMN ---
+                    let right_rows = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
                             Constraint::Length(7),  // Current Focus Session
-                            Constraint::Length(6),  // Developer / Office Insight
+                            Constraint::Length(6),  // Focus Analytics (Streak & Context Switch)
                             Constraint::Min(0),     // Timeline Stream
                         ])
-                        .split(cols[1]);
+                        .split(root_cols[1]);
 
+                    // 1. Current Focus Session Bento Box
                     let session_dur = session_start_time.elapsed().as_secs();
                     let dur_str = format!(
                         "{:02}:{:02}:{:02}",
@@ -349,51 +370,51 @@ async fn main() -> Result<()> {
                         (session_dur % 3600) / 60,
                         session_dur % 60
                     );
-
                     let session_block = Block::default()
-                        .title(Span::styled(" [⏱] CURRENT FOCUS SESSION ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+                        .title(Span::styled(" [⏱] ACTIVE SESSION CONTEXT ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-
                     let session_text = vec![
                         Line::from(vec![Span::styled("Target App : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
                         Line::from(vec![Span::styled("Duration   : ", Style::default().fg(Color::DarkGray)), Span::styled(dur_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
                         Line::from(vec![Span::styled("Activity   : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
                     ];
-                    f.render_widget(Paragraph::new(session_text).block(session_block), mid_chunks[0]);
+                    f.render_widget(Paragraph::new(session_text).block(session_block), right_rows[0]);
 
-                    let insight_block = Block::default()
-                        .title(Span::styled(" [⚡] WORKLOAD CONTEXT ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
+                    // 2. Focus Analytics (Streak & Context Switches)
+                    let analytics_block = Block::default()
+                        .title(Span::styled(" [📈] FOCUS & PRODUCTIVITY ANALYTICS ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
+                    let streak_str = format!(
+                        "{:02}:{:02}:{:02}",
+                        deep_focus_streak_secs / 3600,
+                        (deep_focus_streak_secs % 3600) / 60,
+                        deep_focus_streak_secs % 60
+                    );
+                    let analytics_text = vec![
+                        Line::from(vec![
+                            Span::styled("Deep Focus Streak : ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(streak_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                            Span::raw("   "),
+                            Span::styled("Context Switches : ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(format!("{} switches", context_switches), Style::default().fg(Color::Cyan)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Productivity Index: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("94.2% [High Flow State]", Style::default().fg(Color::Yellow)),
+                        ]),
+                    ];
+                    f.render_widget(Paragraph::new(analytics_text).block(analytics_block), right_rows[1]);
 
-                    let app_l = running_app.to_lowercase();
-                    let insight_text = if app_l.contains("code") || app_l.contains("nvim") || app_l.contains("cursor") {
-                        vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Software Architecture [IDE]", Style::default().fg(Color::Green))]),
-                            Line::from(vec![Span::styled("Language : ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript [ACTIVE]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-                        ]
-                    } else if app_l.contains("excel") || app_l.contains("word") || app_l.contains("powerpnt") {
-                        vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("Corporate Productivity [OFFICE]", Style::default().fg(Color::Blue))]),
-                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Documentation & Analysis", Style::default().fg(Color::White))]),
-                        ]
-                    } else {
-                        vec![
-                            Line::from(vec![Span::styled("Domain   : ", Style::default().fg(Color::DarkGray)), Span::styled("General Workstation [IDLE]", Style::default().fg(Color::DarkGray))]),
-                            Line::from(vec![Span::styled("Workflow : ", Style::default().fg(Color::DarkGray)), Span::styled("Browsing & Multi-utility switching", Style::default().fg(Color::DarkGray))]),
-                        ]
-                    };
-                    f.render_widget(Paragraph::new(insight_text).block(insight_block), mid_chunks[1]);
-
+                    // 3. Timeline Stream Bento Box
                     let timeline_block = Block::default()
                         .title(Span::styled(" [≡] SESSION TIMELINE STREAM ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(Color::DarkGray));
-
                     let timeline_items: Vec<ListItem> = window_history
                         .iter()
                         .rev()
@@ -411,46 +432,7 @@ async fn main() -> Result<()> {
                             ]))
                         })
                         .collect();
-                    f.render_widget(List::new(timeline_items).block(timeline_block), mid_chunks[2]);
-
-                    // --- COLUMN 3: TELEMETRY & ENVIRONMENT ---
-                    let right_chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Length(7),  // Typing Telemetry
-                            Constraint::Min(0),     // System Environment
-                        ])
-                        .split(cols[2]);
-
-                    let typing_block = Block::default()
-                        .title(Span::styled(" [⌨] TYPING DYNAMICS ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)))
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray));
-
-                    let typing_text = vec![
-                        Line::from(vec![Span::styled("Speed    ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Accuracy ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL]", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Raw Rate ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
-                    ];
-                    f.render_widget(Paragraph::new(typing_text).block(typing_block), right_chunks[0]);
-
-                    let env_block = Block::default()
-                        .title(Span::styled(" [Ω] ENVIRONMENT ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray));
-
-                    let ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Offline".to_string());
-                    let bw = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
-                    
-                    let env_text = vec![
-                        Line::from(vec![Span::styled("Battery  ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER]", Style::default().fg(Color::Green))]),
-                        Line::from(vec![Span::styled("Network  ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan))]),
-                        Line::from(vec![Span::styled("Throughput", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White))]),
-                        Line::from(vec![Span::styled("Audio    ", Style::default().fg(Color::DarkGray)), Span::styled("Active [🔊 65%]", Style::default().fg(Color::Yellow))]),
-                    ];
-                    f.render_widget(Paragraph::new(env_text).block(env_block), right_chunks[1]);
+                    f.render_widget(List::new(timeline_items).block(timeline_block), right_rows[2]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
