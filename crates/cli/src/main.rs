@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
     let mut activity_scroll_offset: u16 = 0;
 
     const HISTORY_LEN: usize = 40;
-    let mut window_history: VecDeque<String> = VecDeque::with_capacity(30);
+    let mut window_history: VecDeque<String> = VecDeque::with_capacity(35);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -192,7 +192,7 @@ async fn main() -> Result<()> {
             wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
 
             if window_history.back() != Some(&running_app) {
-                if window_history.len() == 30 {
+                if window_history.len() == 35 {
                     window_history.pop_front();
                 }
                 window_history.push_back(running_app.clone());
@@ -275,7 +275,7 @@ async fn main() -> Result<()> {
             };
             let tabs = Paragraph::new(Line::from(vec![
                 Span::styled(
-                    " ❖ ACTIVITY PULSE ",
+                    " ◈ ACTIVITY PULSE ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
@@ -298,9 +298,8 @@ async fn main() -> Result<()> {
             match active_tab {
                 ActiveTab::Activity => {
                     // =========================================================================
-                    // COMPREHENSIVE BENTO GRID DASHBOARD (Activity Tab)
-                    // We render all detailed laptop metrics into a rich, structured text canvas
-                    // with strict clamped vertical scrolling to prevent infinite scrolling.
+                    // ELITE BENTO GRID DASHBOARD (Activity Tab)
+                    // Perfectly structured layout with rich telemetry boxes and strict scrolling bounds.
                     // =========================================================================
                     let area = layout[1];
 
@@ -324,36 +323,36 @@ async fn main() -> Result<()> {
                     let disk_act_val = disk_snapshot.as_ref().map(|s| format!("{:.1}% active (R:{:.1} W:{:.1} MB/s)", s.soft_active_time, s.soft_read_speed, s.soft_write_speed)).unwrap_or_else(|| "0.0%".to_string());
                     let ip_addr = wifi_snapshot.as_ref().map(|s| s.soft_ipv4_address.clone()).unwrap_or_else(|| "0.0.0.0".to_string());
 
-                    // Build comprehensive content lines with ultra-clean borders & badges
+                    // Build elite comprehensive content lines with ultra-clean borders & status badges
                     let mut content_lines = vec![
-                        // Section 1: Operator Profile & Vibe
+                        // Section 1: Operator Profile & Vibe Identity
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[👤 OPERATOR PROFILE & VIBE IDENTITY]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                            Span::styled("                                   │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[◆] OPERATOR PROFILE & VIBE IDENTITY", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                            Span::styled("                                       │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Name         : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled(" [Principal Software Engineer]               │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Contacts     : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White)), Span::styled(" │ IG: @alex.dev │ GH: github.com/alexv      │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Bio Manifesto: ", Style::default().fg(Color::DarkGray)), Span::styled("\"Low latency, high throughput, zero friction engineering.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)), Span::styled("   │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Global State : ", Style::default().fg(Color::DarkGray)), Span::styled("[● ACTIVE FLOW STATE]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Name          : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled(" [Principal Software Engineer]               │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Direct Contact: ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White)), Span::styled(" │ IG: @alex.dev │ GH: github.com/alexv      │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Manifesto     : ", Style::default().fg(Color::DarkGray)), Span::styled("\"Low latency, high throughput, zero friction engineering.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)), Span::styled("   │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Global State  : ", Style::default().fg(Color::DarkGray)), Span::styled("[✔ ACTIVE FLOW STATE]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled("                                    │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
 
-                        // Section 2: Active Session & Workload Context
+                        // Section 2: Active Session & Deep Workload Context
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[⏱ ACTIVE SESSION & DEEP WORKLOAD CONTEXT]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                            Span::styled("                            │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[⚡] ACTIVE SESSION & DEEP WORKLOAD CONTEXT", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                            Span::styled("                           │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Active Window  : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled("                                       │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Active Window   : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
                         Line::from(vec![Span::styled(" │ Session Duration: ", Style::default().fg(Color::DarkGray)), Span::styled(dur_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)), Span::styled("                                            │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Current Action : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan)), Span::styled(" │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Focus Streak   : ", Style::default().fg(Color::DarkGray)), Span::styled(streak_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled(" │ Context Switches: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} times", context_switches), Style::default().fg(Color::Magenta)), Span::styled("     │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Apps Tracked   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} unique sessions today", total_active_apps_tracked), Style::default().fg(Color::White)), Span::styled("                      │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Current Action  : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan)), Span::styled(" │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Focus Streak    : ", Style::default().fg(Color::DarkGray)), Span::styled(streak_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled(" │ Context Switches: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} times", context_switches), Style::default().fg(Color::Magenta)), Span::styled("     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Unique Sessions : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} tracked today", total_active_apps_tracked), Style::default().fg(Color::White)), Span::styled("                                  │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
 
@@ -361,12 +360,12 @@ async fn main() -> Result<()> {
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[⌨ TYPING DYNAMICS & KEYSTROKE TELEMETRY]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                            Span::styled("[⌨] TYPING DYNAMICS & KEYSTROKE TELEMETRY", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
                             Span::styled("                        │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Typing Speed   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)), Span::styled(" │ Raw Rate: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White)), Span::styled("                │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Typing Accuracy: ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL FLOW]", Style::default().fg(Color::Green)), Span::styled(" │ Keystrokes: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} total", total_keystrokes_today), Style::default().fg(Color::Cyan)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Speed (WPM)     : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)), Span::styled(" │ Raw Rate: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White)), Span::styled("                │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Typing Accuracy : ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL FLOW]", Style::default().fg(Color::Green)), Span::styled(" │ Keystrokes: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} total", total_keystrokes_today), Style::default().fg(Color::Cyan)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
 
@@ -374,16 +373,16 @@ async fn main() -> Result<()> {
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[Ω SYSTEM ENVIRONMENT & HARDWARE PULSE]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                            Span::styled("                             │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[Ω] SYSTEM ENVIRONMENT & HARDWARE PULSE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                            Span::styled("                              │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Battery Status : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER CONNECTED]", Style::default().fg(Color::Green)), Span::styled("                     │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Wireless SSID  : ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan)), Span::styled(" │ IPv4: ", Style::default().fg(Color::DarkGray)), Span::styled(ip_addr, Style::default().fg(Color::White)), Span::styled("                 │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Network Speed  : ", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White)), Span::styled(" │ Audio: Active [🔊 65% Vol]", Style::default().fg(Color::Yellow)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ CPU Telemetry  : ", Style::default().fg(Color::DarkGray)), Span::styled(cpu_util_val, Style::default().fg(Color::Cyan)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ RAM Telemetry  : ", Style::default().fg(Color::DarkGray)), Span::styled(ram_in_use_val, Style::default().fg(Color::Green)), Span::styled("                                    │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Disk Telemetry : ", Style::default().fg(Color::DarkGray)), Span::styled(disk_act_val, Style::default().fg(Color::Yellow)), Span::styled("                                 │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Battery Status  : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER CONNECTED]", Style::default().fg(Color::Green)), Span::styled("                     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Wireless SSID   : ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan)), Span::styled(" │ IPv4: ", Style::default().fg(Color::DarkGray)), Span::styled(ip_addr, Style::default().fg(Color::White)), Span::styled("                 │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Network Speed   : ", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White)), Span::styled(" │ Audio: Active [🔊 65% Vol]", Style::default().fg(Color::Yellow)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ CPU Telemetry   : ", Style::default().fg(Color::DarkGray)), Span::styled(cpu_util_val, Style::default().fg(Color::Cyan)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ RAM Telemetry   : ", Style::default().fg(Color::DarkGray)), Span::styled(ram_in_use_val, Style::default().fg(Color::Green)), Span::styled("                                    │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Disk Telemetry  : ", Style::default().fg(Color::DarkGray)), Span::styled(disk_act_val, Style::default().fg(Color::Yellow)), Span::styled("                                 │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
 
@@ -391,14 +390,14 @@ async fn main() -> Result<()> {
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[≡ RECENT APPLICATION TIMELINE STREAM]", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::styled("[≡] RECENT APPLICATION TIMELINE STREAM", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
                             Span::styled("                              │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
                     ];
 
                     for (i, app) in window_history.iter().rev().enumerate() {
-                        let indicator = if i == 0 { "[▶ CURRENT] " } else { "[-]         " };
+                        let indicator = if i == 0 { "[▶ ACTIVE]  " } else { "[•]         " };
                         let style = if i == 0 {
                             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
                         } else {
