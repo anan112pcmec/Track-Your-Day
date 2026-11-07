@@ -520,7 +520,7 @@ async fn main() -> Result<()> {
                     f.render_widget(menu, sections[0]);
 
                     // ---------------- KANAN: DETAIL & GRAFIK ----------------
-                    match perf_menu {
+                   match perf_menu {
                         PerfMenu::Cpu => {
                             let detail_rows = Layout::default()
                                 .direction(Direction::Vertical)
@@ -536,12 +536,12 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" CPU Utilization ")
+                                        .title(" [#] CPU Utilization ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Cyan))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -556,7 +556,7 @@ async fn main() -> Result<()> {
                                 .name("CPU %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Cyan))
                                 .data(&cpu_points);
 
                             let x_axis = Axis::default()
@@ -571,9 +571,9 @@ async fn main() -> Result<()> {
                             let cpu_chart = Chart::new(vec![cpu_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
                                 .x_axis(x_axis)
@@ -596,16 +596,16 @@ async fn main() -> Result<()> {
                                     )),
                                     Line::from(format!("Base Clock       : {:.0} MHz", snapshot.hard_base_speed)),
                                     Line::from(format!("Cores / Threads  : {} / {}", snapshot.hard_cores, snapshot.hard_logical_processors)),
-                                    Line::from(format!("Virtualization   : {}", if snapshot.hard_virtualization { "Enabled" } else { "Disabled" })),
+                                    Line::from(format!("Virtualization   : {}", if snapshot.hard_virtualization { "[ENABLED]" } else { "[DISABLED]" })),
                                 ]
                             } else {
                                 vec![Line::from(Span::styled("Gathering telemetry...", Style::default().fg(Color::DarkGray)))]
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
+                                    .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
@@ -633,12 +633,12 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" RAM Utilization ")
+                                        .title(" [#] RAM Utilization ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Green))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -653,7 +653,7 @@ async fn main() -> Result<()> {
                                 .name("RAM %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Green))
                                 .data(&ram_points);
 
                             let x_axis = Axis::default()
@@ -668,9 +668,9 @@ async fn main() -> Result<()> {
                             let ram_chart = Chart::new(vec![ram_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
                                 .x_axis(x_axis)
@@ -700,9 +700,9 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
+                                    .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
@@ -722,12 +722,12 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" Disk Active Time ")
+                                        .title(" [#] Disk Active Time ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Yellow))
                                 .percent(usage_percent.clamp(0.0, 100.0).round() as u16)
                                 .label(format!("{usage_percent:.1}%"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -742,7 +742,7 @@ async fn main() -> Result<()> {
                                 .name("Active %")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Yellow))
                                 .data(&disk_points);
 
                             let x_axis = Axis::default()
@@ -757,9 +757,9 @@ async fn main() -> Result<()> {
                             let disk_chart = Chart::new(vec![disk_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
                                 .x_axis(x_axis)
@@ -788,9 +788,9 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
+                                    .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
@@ -811,12 +811,12 @@ async fn main() -> Result<()> {
                             let usage_gauge = Gauge::default()
                                 .block(
                                     Block::default()
-                                        .title(" Wireless Throughput ")
+                                        .title(" [#] Wireless Throughput ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
-                                .gauge_style(Style::default().fg(Color::Gray))
+                                .gauge_style(Style::default().fg(Color::Magenta))
                                 .percent(gauge_percent.round() as u16)
                                 .label(format!("{throughput:.1} Mbps"));
                             f.render_widget(usage_gauge, detail_rows[0]);
@@ -831,7 +831,7 @@ async fn main() -> Result<()> {
                                 .name("Mbps")
                                 .marker(Marker::Braille)
                                 .graph_type(GraphType::Line)
-                                .style(Style::default().fg(Color::Gray))
+                                .style(Style::default().fg(Color::Magenta))
                                 .data(&wifi_points);
 
                             let x_axis = Axis::default()
@@ -846,9 +846,9 @@ async fn main() -> Result<()> {
                             let wifi_chart = Chart::new(vec![wifi_dataset])
                                 .block(
                                     Block::default()
-                                        .title(" Historical Trend ")
+                                        .title(" [~] Historical Trend ")
                                         .borders(Borders::ALL)
-                                        .border_type(BorderType::Plain)
+                                        .border_type(BorderType::Rounded)
                                         .border_style(Style::default().fg(Color::DarkGray)),
                                 )
                                 .x_axis(x_axis)
@@ -877,9 +877,9 @@ async fn main() -> Result<()> {
                             };
                             let detail_panel = Paragraph::new(detail_text).block(
                                 Block::default()
-                                    .title(" Specifications ")
+                                    .title(" [i] Specifications ")
                                     .borders(Borders::ALL)
-                                    .border_type(BorderType::Plain)
+                                    .border_type(BorderType::Rounded)
                                     .border_style(Style::default().fg(Color::DarkGray)),
                             );
                             f.render_widget(detail_panel, detail_rows[2]);
