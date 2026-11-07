@@ -872,7 +872,7 @@ impl WiFiUtilData {
         self.soft_signal_strength = 0;
         self.hard_receive = 0.0;
         self.hard_send = 0.0;
-        self.hard_throughput = 2.0; // Nilai dummy agar chart tetap hidup/bergerak
+        self.hard_throughput = 0.0; // Nilai dummy agar chart tetap hidup/bergerak
     }
 
     unsafe fn fetch_ip_addresses(&mut self, interface_guid: &windows::core::GUID) {
