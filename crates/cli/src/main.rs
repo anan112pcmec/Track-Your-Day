@@ -283,53 +283,78 @@ async fn main() -> Result<()> {
 
             match active_tab {
                 ActiveTab::Activity => {
+                    // Layout 3 Kolom: Dashboard | Timeline | Stats
                     let main_layout = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                        .constraints([
+                            Constraint::Percentage(30), // Dashboard
+                            Constraint::Percentage(40), // Timeline
+                            Constraint::Percentage(30), // Stats
+                        ])
                         .split(layout[1]);
 
-                    // KIRI: Focus & Stats
-                    let left_layout = Layout::default()
+                    // 1. DASHBOARD (Kiri)
+                    let dashboard_layout = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(5), // Current Focus
-                            Constraint::Length(5), // Typing Speed
-                            Constraint::Min(0),    // Placeholder
+                            Constraint::Length(6), // Current Task
+                            Constraint::Length(6), // Focus Score
+                            Constraint::Min(0),    // Session Time
                         ])
                         .split(main_layout[0]);
 
-                    // 1. Current Focus
-                    let focus_block = Block::bordered().title(" Current Focus ");
-                    let focus_text = Paragraph::new(vec![
-                        Line::from(vec![
-                            Span::styled("App: ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(running_app.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        ]),
-                        Line::from(vec![
-                            Span::styled("Uptime: ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(format!("{}s", uptime_secs), Style::default().fg(Color::Yellow)),
-                        ]),
-                    ]).block(focus_block);
-                    f.render_widget(focus_text, left_layout[0]);
+                    let task_block = Block::bordered().title(" Current Task ");
+                    let task_text = Paragraph::new(vec![
+                        Line::from("Planning: Refactoring TUI"),
+                        Line::from("Status: In Progress"),
+                    ]).block(task_block);
+                    f.render_widget(task_text, dashboard_layout[0]);
 
-                    // 2. Typing Speed
+                    let focus_gauge = Gauge::default()
+                        .block(Block::bordered().title(" Focus Score "))
+                        .gauge_style(Style::default().fg(Color::Cyan))
+                        .percent(85)
+                        .label("85%");
+                    f.render_widget(focus_gauge, dashboard_layout[1]);
+
+                    let session_block = Block::bordered().title(" Session Time ");
+                    let session_text = Paragraph::new(format!("Total: {:02}:{:02}:{:02}", uptime_secs/3600, (uptime_secs%3600)/60, uptime_secs%60)).block(session_block);
+                    f.render_widget(session_text, dashboard_layout[2]);
+
+                    // 2. TIMELINE (Tengah)
+                    let timeline_block = Block::bordered().title(" Activity Timeline ");
+                    let items: Vec<ListItem> = window_history
+                        .iter()
+                        .rev()
+                        .map(|app| ListItem::new(format!("• {}", app)))
+                        .collect();
+                    let list = List::new(items).block(timeline_block);
+                    f.render_widget(list, main_layout[1]);
+
+                    // 3. STATS (Kanan)
+                    let stats_layout = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Percentage(50), // Top Apps
+                            Constraint::Percentage(50), // Typing Intensity
+                        ])
+                        .split(main_layout[2]);
+
+                    let top_apps_block = Block::bordered().title(" Top Apps ");
+                    let top_apps = List::new(vec![
+                        ListItem::new("1. VS Code - 2h 30m"),
+                        ListItem::new("2. Chrome - 1h 15m"),
+                        ListItem::new("3. Terminal - 45m"),
+                    ]).block(top_apps_block);
+                    f.render_widget(top_apps, stats_layout[0]);
+
                     let wpm_block = Block::bordered().title(" Typing Intensity ");
                     let wpm_data = wpm_data_slice(&wpm_history);
                     let wpm_chart = Sparkline::default()
                         .block(wpm_block)
                         .data(&wpm_data)
                         .style(Style::default().fg(Color::Magenta));
-                    f.render_widget(wpm_chart, left_layout[1]);
-
-                    // KANAN: History
-                    let history_block = Block::bordered().title(" Recent Apps ");
-                    let items: Vec<ListItem> = window_history
-                        .iter()
-                        .rev()
-                        .map(|app| ListItem::new(format!("• {}", app)))
-                        .collect();
-                    let list = List::new(items).block(history_block);
-                    f.render_widget(list, main_layout[1]);
+                    f.render_widget(wpm_chart, stats_layout[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
