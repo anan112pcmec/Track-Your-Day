@@ -754,6 +754,11 @@ pub struct WiFiUtilData {
     soft_ipv4_address: String,
     soft_ipv6_address: String,
     soft_signal_strength: u32,
+
+    // State internal untuk membaca statistik nyata via GetAdaptersAddresses (menggantikan dummy)
+    last_bytes_received: u64,
+    last_bytes_sent: u64,
+    last_tick_time: Instant,
 }
 
 impl WiFiUtilData {
@@ -770,6 +775,10 @@ impl WiFiUtilData {
             soft_ipv4_address: "-".to_string(),
             soft_ipv6_address: "-".to_string(),
             soft_signal_strength: 0,
+
+            last_bytes_received: 0,
+            last_bytes_sent: 0,
+            last_tick_time: Instant::now(),
         }
     }
 
@@ -848,10 +857,6 @@ impl WiFiUtilData {
                         dot11_phy_type_dmg => "802.11ad (WiGig)".to_string(),
                         _ => "Unknown".to_string(),
                     };
-
-                    self.hard_receive = assoc.ulRxRate as f32 / 1000.0; // Konversi Kbps ke Mbps (atau dari raw rate unit)
-                    self.hard_send = assoc.ulTxRate as f32 / 1000.0;
-                    self.hard_throughput = (self.hard_receive + self.hard_send).max(1.5); // Fallback base agar chart terlihat aktif
                 } else {
                     self.reset_connection_fields();
                 }
@@ -862,7 +867,8 @@ impl WiFiUtilData {
             WlanFreeMemory(interface_list_ptr as *const c_void);
             let _ = WlanCloseHandle(client_handle, None);
 
-            self.fetch_ip_addresses(&interface_guid);
+            // Ambil statistik real-time bytes Rx/Tx serta IP Address secara jujur dari OS
+            self.fetch_network_statistics_and_ip(&interface_guid);
         }
     }
 
@@ -872,10 +878,10 @@ impl WiFiUtilData {
         self.soft_signal_strength = 0;
         self.hard_receive = 0.0;
         self.hard_send = 0.0;
-        self.hard_throughput = 0.0; // Nilai dummy agar chart tetap hidup/bergerak
+        self.hard_throughput = 0.0;
     }
 
-    unsafe fn fetch_ip_addresses(&mut self, interface_guid: &windows::core::GUID) {
+    unsafe fn fetch_network_statistics_and_ip(&mut self, interface_guid: &windows::core::GUID) {
         let target_guid_str = format!("{{{:?}}}", interface_guid).to_uppercase();
 
         let mut buffer_size: u32 = 15_000;
@@ -906,6 +912,12 @@ impl WiFiUtilData {
             return;
         }
 
+        let elapsed_secs = self.last_tick_time.elapsed().as_secs_f64();
+        self.last_tick_time = Instant::now();
+        if elapsed_secs <= 0.0 {
+            return;
+        }
+
         let mut current = buffer.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
         let mut found_ipv4 = false;
         let mut found_ipv6 = false;
@@ -922,6 +934,30 @@ impl WiFiUtilData {
             };
 
             if adapter_name == target_guid_str {
+                // Ambil statistik Rx/Tx real bytes secara jujur dari OS
+                let stats = adapter.Anonymous1.Anonymous.Stats;
+                let current_bytes_received = stats.ipReceiveBytes;
+                let current_bytes_sent = stats.ipTransmitBytes;
+
+                if self.last_bytes_received > 0 && current_bytes_received >= self.last_bytes_received {
+                    let rx_diff = (current_bytes_received - self.last_bytes_received) as f64;
+                    self.hard_receive = ((rx_diff * 8.0) / elapsed_secs / 1_000_000.0) as f32; // konversi ke Mbps
+                } else {
+                    self.hard_receive = 0.0;
+                }
+
+                if self.last_bytes_sent > 0 && current_bytes_sent >= self.last_bytes_sent {
+                    let tx_diff = (current_bytes_sent - self.last_bytes_sent) as f64;
+                    self.hard_send = ((tx_diff * 8.0) / elapsed_secs / 1_000_000.0) as f32; // konversi ke Mbps
+                } else {
+                    self.hard_send = 0.0;
+                }
+
+                self.last_bytes_received = current_bytes_received;
+                self.last_bytes_sent = current_bytes_sent;
+                self.hard_throughput = self.hard_receive + self.hard_send;
+
+                // Ambil Unicast IP Addresses
                 let mut unicast = adapter.FirstUnicastAddress;
                 while !unicast.is_null() {
                     let ua = &*unicast;
