@@ -21,7 +21,7 @@ use ratatui::{
     widgets::{Block, Gauge, Paragraph, Sparkline},
 };
 use ratatui::symbols::Marker;
-use ratatui::widgets::{Axis, Chart, Dataset, GraphType};
+use ratatui::widgets::{Axis, Chart, Dataset, GraphType, List, ListItem};
 
 /// Guard RAII untuk memastikan state terminal selalu dikembalikan ke normal saat exit / panic
 struct TerminalGuard;
@@ -283,63 +283,53 @@ async fn main() -> Result<()> {
 
             match active_tab {
                 ActiveTab::Activity => {
-                    let rows = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Length(3); 4])
+                    let main_layout = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
                         .split(layout[1]);
 
+                    // KIRI: Focus & Stats
+                    let left_layout = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(5), // Current Focus
+                            Constraint::Length(5), // Typing Speed
+                            Constraint::Min(0),    // Placeholder
+                        ])
+                        .split(main_layout[0]);
+
+                    // 1. Current Focus
+                    let focus_block = Block::bordered().title(" Current Focus ");
+                    let focus_text = Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("App: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(running_app.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Uptime: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(format!("{}s", uptime_secs), Style::default().fg(Color::Yellow)),
+                        ]),
+                    ]).block(focus_block);
+                    f.render_widget(focus_text, left_layout[0]);
+
+                    // 2. Typing Speed
+                    let wpm_block = Block::bordered().title(" Typing Intensity ");
                     let wpm_data = wpm_data_slice(&wpm_history);
-                    let process_data = wpm_data_slice(&process_history);
+                    let wpm_chart = Sparkline::default()
+                        .block(wpm_block)
+                        .data(&wpm_data)
+                        .style(Style::default().fg(Color::Magenta));
+                    f.render_widget(wpm_chart, left_layout[1]);
 
-                    let metric_row = |label: &str,
-                                      value: String,
-                                      color: Color,
-                                      area: Rect|
-                     -> (Paragraph, std::rc::Rc<[Rect]>) {
-                        let cols = Layout::default()
-                            .direction(Direction::Horizontal)
-                            .constraints([Constraint::Length(28), Constraint::Min(0)])
-                            .split(area);
-                        let text = Paragraph::new(Line::from(vec![
-                            Span::styled(
-                                format!("{label:<16}"),
-                                Style::default().fg(Color::DarkGray),
-                            ),
-                            Span::styled(
-                                value,
-                                Style::default().fg(color).add_modifier(Modifier::BOLD),
-                            ),
-                        ]));
-                        (text, cols)
-                    };
-
-                    let (text, cols) =
-                        metric_row("Typing Speed", format!("{wpm_score} WPM"), Color::Cyan, rows[0]);
-                    f.render_widget(text, cols[0]);
-                    f.render_widget(
-                        Sparkline::default()
-                            .data(&wpm_data)
-                            .style(Style::default().fg(Color::Cyan)),
-                        cols[1],
-                    );
-
-                    let (text, _) =
-                        metric_row("Active Window", running_app.clone(), Color::Magenta, rows[1]);
-                    f.render_widget(text, rows[1]);
-
-                    let (text, cols) =
-                        metric_row("Processes", format!("{current_process}"), Color::Yellow, rows[2]);
-                    f.render_widget(text, cols[0]);
-                    f.render_widget(
-                        Sparkline::default()
-                            .data(&process_data)
-                            .style(Style::default().fg(Color::Yellow)),
-                        cols[1],
-                    );
-
-                    let (text, _) =
-                        metric_row("Uptime", format!("{uptime_secs}s"), Color::Blue, rows[3]);
-                    f.render_widget(text, rows[3]);
+                    // KANAN: History
+                    let history_block = Block::bordered().title(" Recent Apps ");
+                    let items: Vec<ListItem> = window_history
+                        .iter()
+                        .rev()
+                        .map(|app| ListItem::new(format!("• {}", app)))
+                        .collect();
+                    let list = List::new(items).block(history_block);
+                    f.render_widget(list, main_layout[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
