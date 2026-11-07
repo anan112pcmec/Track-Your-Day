@@ -9,13 +9,8 @@ pub struct ActivityEvent {
     pub kind: ActivityKind,
 }
 
-/// Snapshot data CPU dalam satu waktu. Dipisah jadi struct sendiri
-/// (bukan field langsung di `ActivityKind::Cpu`) biar gak numpuk 13 field
-/// mentah di satu variant enum, dan gampang dipakai ulang di tempat lain
-/// (mis. buat panel "Performance" di TUI) tanpa harus destructure enum.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CpuSnapshot {
-    // ---------- hardware (statis) ----------
     pub hard_base_speed: f32,
     pub hard_sockets: u8,
     pub hard_cores: u16,
@@ -24,8 +19,6 @@ pub struct CpuSnapshot {
     pub hard_l1_cache: f32,
     pub hard_l2_cache: f32,
     pub hard_l3_cache: f32,
-
-    // ---------- software (live) ----------
     pub soft_utilization: f32,
     pub soft_speed_clock: f32,
     pub soft_processes: u32,
@@ -69,7 +62,6 @@ pub struct WiFiSnapshot {
     pub hard_throughput: f32,
     pub hard_send: f32,
     pub hard_receive: f32,
-
     pub soft_adapter_name: String,
     pub soft_ssid: String,
     pub soft_connection_type: String,
@@ -78,10 +70,21 @@ pub struct WiFiSnapshot {
     pub soft_signal_strength: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PowerSnapshot {
+    pub ac_line_status: u8,
+    pub battery_flag: u8,
+    pub battery_life_percent: u8,
+    pub battery_life_time: i32,
+    pub battery_saver_active: bool,
+}
 
-/// Jenis data mentah yang mau kamu rekam untuk "track your day".
-/// Tinggal tambah varian di sini kalau mau nambah sinyal baru
-/// (mis. AppSwitch, ClipboardActivity, dst).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioSnapshot {
+    pub master_volume: f32,
+    pub is_muted: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActivityKind {
     ActiveWindow { app: String, title: String },
@@ -90,21 +93,21 @@ pub enum ActivityKind {
     Cpu(CpuSnapshot),
     Ram(RamSnapshot),
     Disk(DiskSnapshot),
-    WiFi(WiFiSnapshot)
+    WiFi(WiFiSnapshot),
+    IdleTime { idle_secs: u64 },
+    Power(PowerSnapshot),
+    Audio(AudioSnapshot),
+    ScreenState { locked: bool },
+    NetworkType { connection_type: String },
+    ClipboardActivity { updates: usize },
 }
 
-/// Kontrak penyimpanan. Diimplementasikan oleh crate `database`.
-/// `watcher-mutator` cuma butuh trait ini — tidak tahu & tidak peduli
-/// di baliknya SQLite, JSON file, atau in-memory.
 #[async_trait]
 pub trait ActivityStore: Send + Sync {
     async fn save(&self, event: ActivityEvent) -> anyhow::Result<()>;
     async fn recent(&self, limit: usize) -> anyhow::Result<Vec<ActivityEvent>>;
 }
 
-/// Kontrak "bereaksi" terhadap event baru. Diimplementasikan oleh
-/// crate `watcher-reactive` (atau apapun yang mau bereaksi: logger,
-/// notifikasi desktop, dsb).
 #[async_trait]
 pub trait ActivityReactor: Send + Sync {
     async fn on_event(&self, event: &ActivityEvent);

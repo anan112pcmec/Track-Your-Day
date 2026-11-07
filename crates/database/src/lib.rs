@@ -1,11 +1,3 @@
-//! `database` — implementasi nyata dari trait `separation::ActivityStore`.
-//!
-//! Sekarang isinya in-memory (Vec di belakang Mutex) supaya starter ini
-//! ringan & langsung jalan tanpa setup file/DB apapun. Nanti kalau mau
-//! ganti ke SQLite/sled/rocksdb, cukup ganti isi `MemoryStore` (atau bikin
-//! struct baru) — selama tetap implement `ActivityStore`, `cli` dan
-//! `watcher-mutator` tidak perlu diubah sama sekali.
-
 use anyhow::Result;
 use async_trait::async_trait;
 use separation::{ActivityEvent, ActivityStore};
