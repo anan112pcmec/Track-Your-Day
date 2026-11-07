@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
     let mut activity_scroll_offset: u16 = 0;
 
     const HISTORY_LEN: usize = 40;
-    let mut window_history: VecDeque<String> = VecDeque::with_capacity(20);
+    let mut window_history: VecDeque<String> = VecDeque::with_capacity(30);
     let mut cpu_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut ram_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut disk_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -132,12 +132,13 @@ async fn main() -> Result<()> {
     let mut disk_snapshot: Option<DiskSnapshot> = None;
     let mut wifi_snapshot: Option<WiFiSnapshot> = None;
 
-    // Sesi tracking & state tambahan (Comprehensive Laptop Life-Logging)
+    // Sesi tracking & state tambahan (Comprehensive Laptop Life-Logging & Deep Analytics)
     let mut session_start_time = Instant::now();
     let mut current_session_activity = String::from("Initializing workspace context");
     let mut context_switches: usize = 0;
     let mut deep_focus_streak_secs: u64 = 0;
     let mut total_keystrokes_today: usize = 0;
+    let mut total_active_apps_tracked: usize = 0;
 
     // 7) MAIN TUI LOOP
     loop {
@@ -150,7 +151,7 @@ async fn main() -> Result<()> {
             last_fetch_time = Instant::now();
 
             wpm_score = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
-            total_keystrokes_today += (wpm_score as usize * 2).min(50); // Estimasi akumulatif
+            total_keystrokes_today += (wpm_score as usize * 2).min(50);
             let fetched_app = api_state
                 .running_application_check()
                 .await
@@ -165,20 +166,21 @@ async fn main() -> Result<()> {
                 running_app = fetched_app;
                 session_start_time = Instant::now();
                 deep_focus_streak_secs = 0;
+                total_active_apps_tracked += 1;
                 
                 let app_lower = running_app.to_lowercase();
                 if app_lower.contains("code") || app_lower.contains("nvim") || app_lower.contains("cursor") {
-                    current_session_activity = String::from("Writing & compiling architectural code (Rust / TS)");
+                    current_session_activity = String::from("Writing & compiling architectural code (Rust / TypeScript / Systems)");
                 } else if app_lower.contains("excel") || app_lower.contains("word") || app_lower.contains("powerpnt") {
-                    current_session_activity = String::from("Drafting formal corporate reports & spreadsheet models");
+                    current_session_activity = String::from("Drafting formal corporate reports & advanced spreadsheet models");
                 } else if app_lower.contains("chrome") || app_lower.contains("firefox") || app_lower.contains("msedge") {
-                    current_session_activity = String::from("Web research, documentation browsing & API testing");
+                    current_session_activity = String::from("Deep web research, technical documentation browsing & API testing");
                 } else if app_lower.contains("terminal") || app_lower.contains("iterm") || app_lower.contains("conhost") {
-                    current_session_activity = String::from("Shell execution, cargo build & container management");
+                    current_session_activity = String::from("Shell execution, cargo build, container orchestration & log streaming");
                 } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("discord") {
-                    current_session_activity = String::from("Media playback, background audio & community comms");
+                    current_session_activity = String::from("Media playback, background audio flow & community communications");
                 } else {
-                    current_session_activity = String::from("General workstation multitasking & window management");
+                    current_session_activity = String::from("General workstation multitasking & advanced window management");
                 }
             } else {
                 deep_focus_streak_secs = session_start_time.elapsed().as_secs();
@@ -190,7 +192,7 @@ async fn main() -> Result<()> {
             wifi_snapshot = api_state.wifi_util_check().await.ok().flatten();
 
             if window_history.back() != Some(&running_app) {
-                if window_history.len() == 20 {
+                if window_history.len() == 30 {
                     window_history.pop_front();
                 }
                 window_history.push_back(running_app.clone());
@@ -296,9 +298,9 @@ async fn main() -> Result<()> {
             match active_tab {
                 ActiveTab::Activity => {
                     // =========================================================================
-                    // COMPREHENSIVE SCROLLABLE BENTO DASHBOARD (Activity Tab)
-                    // We render all detailed laptop metrics into a virtual canvas / paragraph
-                    // with vertical scroll offset controlled by user input.
+                    // COMPREHENSIVE BENTO GRID DASHBOARD (Activity Tab)
+                    // We render all detailed laptop metrics into a rich, structured text canvas
+                    // with strict clamped vertical scrolling to prevent infinite scrolling.
                     // =========================================================================
                     let area = layout[1];
 
@@ -317,37 +319,45 @@ async fn main() -> Result<()> {
                     );
                     let ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Offline".to_string());
                     let bw = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
-                    let cpu_util_val = cpu_snapshot.as_ref().map(|s| format!("{:.1}%", s.soft_utilization)).unwrap_or_else(|| "0.0%".to_string());
-                    let ram_in_use_val = ram_snapshot.as_ref().map(|s| format!("{:.2} GB", s.soft_in_use)).unwrap_or_else(|| "0.00 GB".to_string());
+                    let cpu_util_val = cpu_snapshot.as_ref().map(|s| format!("{:.1}% ({:.0} MHz)", s.soft_utilization, s.soft_speed_clock)).unwrap_or_else(|| "0.0%".to_string());
+                    let ram_in_use_val = ram_snapshot.as_ref().map(|s| format!("{:.2} GB / {:.2} GB", s.soft_in_use, s.hard_capacity)).unwrap_or_else(|| "0.00 GB".to_string());
+                    let disk_act_val = disk_snapshot.as_ref().map(|s| format!("{:.1}% active (R:{:.1} W:{:.1} MB/s)", s.soft_active_time, s.soft_read_speed, s.soft_write_speed)).unwrap_or_else(|| "0.0%".to_string());
+                    let ip_addr = wifi_snapshot.as_ref().map(|s| s.soft_ipv4_address.clone()).unwrap_or_else(|| "0.0.0.0".to_string());
 
-                    // Build full comprehensive text content for scrollable activity feed
+                    // Build comprehensive content lines with ultra-clean borders & badges
                     let mut content_lines = vec![
+                        // Section 1: Operator Profile & Vibe
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[👤 OPERATOR PROFILE & VIBE]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                            Span::styled("                                           │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[👤 OPERATOR PROFILE & VIBE IDENTITY]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                            Span::styled("                                   │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Name    : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled(" (Principal Software Engineer)               │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Contact : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White)), Span::styled(" │ IG: @alex.dev │ GH: github.com/alexv      │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Bio/Vibe: ", Style::default().fg(Color::DarkGray)), Span::styled("\"Low latency, high throughput, zero friction engineering.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)), Span::styled("   │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Status  : ", Style::default().fg(Color::DarkGray)), Span::styled("[● ACTIVE / FLOW STATE]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled("                                    │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Name         : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex V. Vance", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled(" [Principal Software Engineer]               │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Contacts     : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White)), Span::styled(" │ IG: @alex.dev │ GH: github.com/alexv      │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Bio Manifesto: ", Style::default().fg(Color::DarkGray)), Span::styled("\"Low latency, high throughput, zero friction engineering.\"", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)), Span::styled("   │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Global State : ", Style::default().fg(Color::DarkGray)), Span::styled("[● ACTIVE FLOW STATE]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
+
+                        // Section 2: Active Session & Workload Context
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[⏱ ACTIVE SESSION & WORKLOAD CONTEXT]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                            Span::styled("                                 │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[⏱ ACTIVE SESSION & DEEP WORKLOAD CONTEXT]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                            Span::styled("                            │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Target App     : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled("                                           │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Session Dur.   : ", Style::default().fg(Color::DarkGray)), Span::styled(dur_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)), Span::styled("                                             │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Current Action : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan)), Span::styled("    │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Focus Streak   : ", Style::default().fg(Color::DarkGray)), Span::styled(streak_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled(" │ Context Switches: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} switches", context_switches), Style::default().fg(Color::Magenta)), Span::styled("   │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Active Window  : ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)), Span::styled("                                       │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Session Duration: ", Style::default().fg(Color::DarkGray)), Span::styled(dur_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)), Span::styled("                                            │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Current Action : ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan)), Span::styled(" │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Focus Streak   : ", Style::default().fg(Color::DarkGray)), Span::styled(streak_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::styled(" │ Context Switches: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} times", context_switches), Style::default().fg(Color::Magenta)), Span::styled("     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Apps Tracked   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} unique sessions today", total_active_apps_tracked), Style::default().fg(Color::White)), Span::styled("                      │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
+
+                        // Section 3: Typing Dynamics & Keystroke Telemetry
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
@@ -355,23 +365,29 @@ async fn main() -> Result<()> {
                             Span::styled("                        │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Speed (WPM)    : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)), Span::styled(" │ Raw Rate: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White)), Span::styled("                │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Typing Speed   : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)), Span::styled(" │ Raw Rate: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White)), Span::styled("                │", Style::default().fg(Color::DarkGray))]),
                         Line::from(vec![Span::styled(" │ Typing Accuracy: ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% [OPTIMAL FLOW]", Style::default().fg(Color::Green)), Span::styled(" │ Keystrokes: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} total", total_keystrokes_today), Style::default().fg(Color::Cyan)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
+
+                        // Section 4: System Environment & Hardware Pulse
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled("[Ω SYSTEM ENVIRONMENT & TELEMETRY]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                            Span::styled("                                 │", Style::default().fg(Color::DarkGray)),
+                            Span::styled("[Ω SYSTEM ENVIRONMENT & HARDWARE PULSE]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                            Span::styled("                             │", Style::default().fg(Color::DarkGray)),
                         ]),
                         Line::from(Span::styled("├────────────────────────────────────────────────────────────────────────┤", Style::default().fg(Color::DarkGray))),
-                        Line::from(vec![Span::styled(" │ Battery State  : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER CONNECTED]", Style::default().fg(Color::Green)), Span::styled("                     │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Network SSID   : ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan)), Span::styled(" │ Bandwidth: ", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White)), Span::styled("              │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Audio Output   : ", Style::default().fg(Color::DarkGray)), Span::styled("Active [🔊 65% Volume - Unmuted]", Style::default().fg(Color::Yellow)), Span::styled("             │", Style::default().fg(Color::DarkGray))]),
-                        Line::from(vec![Span::styled(" │ Hardware Load  : ", Style::default().fg(Color::DarkGray)), Span::styled(format!("CPU: {} │ RAM: {}", cpu_util_val, ram_in_use_val), Style::default().fg(Color::White)), Span::styled("               │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Battery Status : ", Style::default().fg(Color::DarkGray)), Span::styled("85% [⚡ AC POWER CONNECTED]", Style::default().fg(Color::Green)), Span::styled("                     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Wireless SSID  : ", Style::default().fg(Color::DarkGray)), Span::styled(ssid, Style::default().fg(Color::Cyan)), Span::styled(" │ IPv4: ", Style::default().fg(Color::DarkGray)), Span::styled(ip_addr, Style::default().fg(Color::White)), Span::styled("                 │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Network Speed  : ", Style::default().fg(Color::DarkGray)), Span::styled(bw, Style::default().fg(Color::White)), Span::styled(" │ Audio: Active [🔊 65% Vol]", Style::default().fg(Color::Yellow)), Span::styled("           │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ CPU Telemetry  : ", Style::default().fg(Color::DarkGray)), Span::styled(cpu_util_val, Style::default().fg(Color::Cyan)), Span::styled("                                     │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ RAM Telemetry  : ", Style::default().fg(Color::DarkGray)), Span::styled(ram_in_use_val, Style::default().fg(Color::Green)), Span::styled("                                    │", Style::default().fg(Color::DarkGray))]),
+                        Line::from(vec![Span::styled(" │ Disk Telemetry : ", Style::default().fg(Color::DarkGray)), Span::styled(disk_act_val, Style::default().fg(Color::Yellow)), Span::styled("                                 │", Style::default().fg(Color::DarkGray))]),
                         Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))),
                         Line::from(""),
+
+                        // Section 5: Recent Application Timeline Stream
                         Line::from(Span::styled("┌────────────────────────────────────────────────────────────────────────┐", Style::default().fg(Color::DarkGray))),
                         Line::from(vec![
                             Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
@@ -396,10 +412,18 @@ async fn main() -> Result<()> {
                     }
                     content_lines.push(Line::from(Span::styled("└────────────────────────────────────────────────────────────────────────┘", Style::default().fg(Color::DarkGray))));
 
+                    // Hitung maksimum baris konten agar scroll offset memiliki batas bawah yang valid (tidak bisa scroll tak terhingga)
+                    let total_content_lines = content_lines.len() as u16;
+                    let visible_height = area.height.saturating_sub(2); // dikurangi border atas & bawah
+                    let max_scroll = total_content_lines.saturating_sub(visible_height);
+                    if activity_scroll_offset > max_scroll {
+                        activity_scroll_offset = max_scroll;
+                    }
+
                     let activity_paragraph = Paragraph::new(content_lines)
                         .block(
                             Block::default()
-                                .title(Span::styled(" [COMPREHENSIVE ACTIVITY FEED & LIFE-LOGGING] (Scrollable) ", Style::default().fg(Color::Cyan)))
+                                .title(Span::styled(format!(" [COMPREHENSIVE ACTIVITY FEED] (Scroll: {}/{}) ", activity_scroll_offset, max_scroll), Style::default().fg(Color::Cyan)))
                                 .borders(Borders::ALL)
                                 .border_type(BorderType::Rounded)
                                 .border_style(Style::default().fg(Color::DarkGray)),
