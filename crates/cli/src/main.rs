@@ -274,30 +274,36 @@ async fn main() -> Result<()> {
                         ])
                         .split(main_layout[0]);
 
-                    let task_block = Block::bordered().title(" Current Task ");
+                    let task_block = Block::bordered().title(Span::styled(" Current Task ", Style::default().add_modifier(Modifier::BOLD)));
                     let task_text = Paragraph::new(vec![
-                        Line::from("Planning: Refactoring TUI"),
-                        Line::from("Status: In Progress"),
-                    ]).block(task_block);
+                        Line::from(vec![Span::styled("󰓛 ", Style::default().fg(Color::Yellow)), Span::raw("Planning: Refactoring TUI")]),
+                        Line::from(vec![Span::styled("󰔟 ", Style::default().fg(Color::Green)), Span::raw("Status: In Progress")]),
+                    ]).block(task_block).alignment(Alignment::Left);
                     f.render_widget(task_text, dashboard_layout[0]);
 
                     let focus_gauge = Gauge::default()
-                        .block(Block::bordered().title(" Focus Score "))
+                        .block(Block::bordered().title(Span::styled(" Focus Score ", Style::default().add_modifier(Modifier::BOLD))))
                         .gauge_style(Style::default().fg(Color::Cyan))
                         .percent(85)
-                        .label("85%");
+                        .label(Span::styled("85%", Style::default().add_modifier(Modifier::BOLD)));
                     f.render_widget(focus_gauge, dashboard_layout[1]);
 
-                    let session_block = Block::bordered().title(" Session Time ");
-                    let session_text = Paragraph::new(format!("Total: {:02}:{:02}:{:02}", uptime_secs/3600, (uptime_secs%3600)/60, uptime_secs%60)).block(session_block);
+                    let session_block = Block::bordered().title(Span::styled(" Session Time ", Style::default().add_modifier(Modifier::BOLD)));
+                    let session_text = Paragraph::new(format!("{:02}:{:02}:{:02}", uptime_secs/3600, (uptime_secs%3600)/60, uptime_secs%60))
+                        .block(session_block)
+                        .alignment(Alignment::Center)
+                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
                     f.render_widget(session_text, dashboard_layout[2]);
 
                     // 2. TIMELINE (Tengah)
-                    let timeline_block = Block::bordered().title(" Activity Timeline ");
+                    let timeline_block = Block::bordered().title(Span::styled(" Activity Timeline ", Style::default().add_modifier(Modifier::BOLD)));
                     let items: Vec<ListItem> = window_history
                         .iter()
                         .rev()
-                        .map(|app| ListItem::new(format!("• {}", app)))
+                        .map(|app| ListItem::new(Line::from(vec![
+                            Span::styled("󰣐 ", Style::default().fg(Color::DarkGray)),
+                            Span::raw(app)
+                        ])))
                         .collect();
                     let list = List::new(items).block(timeline_block);
                     f.render_widget(list, main_layout[1]);
@@ -311,20 +317,29 @@ async fn main() -> Result<()> {
                         ])
                         .split(main_layout[2]);
 
-                    let top_apps_block = Block::bordered().title(" Top Apps ");
+                    let top_apps_block = Block::bordered().title(Span::styled(" Top Apps ", Style::default().add_modifier(Modifier::BOLD)));
                     let top_apps = List::new(vec![
-                        ListItem::new("1. VS Code - 2h 30m"),
-                        ListItem::new("2. Chrome - 1h 15m"),
-                        ListItem::new("3. Terminal - 45m"),
+                        ListItem::new("1. VS Code  [2h 30m]"),
+                        ListItem::new("2. Chrome   [1h 15m]"),
+                        ListItem::new("3. Terminal [45m]"),
                     ]).block(top_apps_block);
                     f.render_widget(top_apps, stats_layout[0]);
 
                     // Typing Stats (Statistik WPM)
-                    let typing_block = Block::bordered().title(" Typing Stats ");
+                    let typing_block = Block::bordered().title(Span::styled(" Typing Stats ", Style::default().add_modifier(Modifier::BOLD)));
                     let typing_text = Paragraph::new(vec![
-                        Line::from(vec![Span::styled("Current WPM: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{}", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
-                        Line::from(vec![Span::styled("Peak WPM   : ", Style::default().fg(Color::DarkGray)), Span::styled("120", Style::default().fg(Color::Yellow))]),
-                        Line::from(vec![Span::styled("Accuracy   : ", Style::default().fg(Color::DarkGray)), Span::styled("98%", Style::default().fg(Color::Green))]),
+                        Line::from(vec![
+                            Span::styled("Current WPM: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(format!("{}", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Peak WPM   : ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("120", Style::default().fg(Color::Yellow))
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Accuracy   : ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("98%", Style::default().fg(Color::Green))
+                        ]),
                     ]).block(typing_block);
                     f.render_widget(typing_text, stats_layout[1]);
                 }
