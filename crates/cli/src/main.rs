@@ -131,6 +131,10 @@ async fn main() -> Result<()> {
     let mut disk_snapshot: Option<DiskSnapshot> = None;
     let mut wifi_snapshot: Option<WiFiSnapshot> = None;
 
+    // Sesi tracking & state tambahan untuk fitur social-activity
+    let mut session_start_time = Instant::now();
+    let mut current_session_activity = String::from("Menulis kode & eksplorasi arsitektur");
+
     // 7) MAIN TUI LOOP
     loop {
         render_interval.tick().await;
@@ -142,12 +146,27 @@ async fn main() -> Result<()> {
             last_fetch_time = Instant::now();
 
             wpm_score = api_state.wpm_check().await.ok().flatten().unwrap_or(0);
-            running_app = api_state
+            let fetched_app = api_state
                 .running_application_check()
                 .await
                 .ok()
                 .flatten()
                 .unwrap_or_else(|| String::from("None"));
+
+            if fetched_app != running_app {
+                running_app = fetched_app;
+                session_start_time = Instant::now(); // Reset durasi sesi saat aplikasi berganti
+                // Deteksi cerdas aktivitas berdasarkan aplikasi
+                if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
+                    current_session_activity = String::from("Coding (Rust/TypeScript)");
+                } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
+                    current_session_activity = String::from("Pekerjaan Formal / Dokumen Kantor");
+                } else if running_app.to_lowercase().contains("chrome") || running_app.to_lowercase().contains("firefox") {
+                    current_session_activity = String::from("Browsing / Riset & Dokumentasi");
+                } else {
+                    current_session_activity = String::from("Eksplorasi Umum / Multitasking");
+                }
+            }
 
             cpu_snapshot = api_state.cpu_util_check().await.ok().flatten();
             ram_snapshot = api_state.ram_util_check().await.ok().flatten();
@@ -254,87 +273,108 @@ async fn main() -> Result<()> {
 
             match active_tab {
                 ActiveTab::Activity => {
-                    // Revamped Activity Tab Layout: 3 Columns
-                    // Kolom 1 (34%): Current Focus & Real-time Live Metrics
-                    // Kolom 2 (36%): Interactive Timeline / App History
-                    // Kolom 3 (30%): Deep Work & Category Breakdown / Insights
+                    // Layout 3 Kolom untuk Social-Activity Dashboard
+                    // Kolom 1 (30%): Profil & Identitas User
+                    // Kolom 2 (40%): Live Sesi Aplikasi, Konteks Kerja, & Detail Coding/Office
+                    // Kolom 3 (30%): General Status (Baterai, WiFi, Audio, WPM & Akurasi)
                     let main_layout = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(34),
-                            Constraint::Percentage(36),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(40),
                             Constraint::Percentage(30),
                         ])
                         .split(layout[1]);
 
-                    // --- 1. CURRENT FOCUS & LIVE STATS ---
-                    let focus_chunks = Layout::default()
+                    // --- 1. PROFIL & IDENTITAS PENGGUNA ---
+                    let profile_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(9), // Current App & WPM
-                            Constraint::Length(6), // Session timer
-                            Constraint::Min(0),    // Current Task / Notes
+                            Constraint::Length(11), // Info Pribadi & Kontak
+                            Constraint::Min(0),    // Bio & Motivasi
                         ])
                         .split(main_layout[0]);
 
-                    let focus_block = Block::bordered().title(Span::styled(
-                        " Current Focus ",
+                    let profile_block = Block::bordered().title(Span::styled(
+                        " User Profile ",
                         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                     ));
-                    
-                    let focus_content = vec![
-                        Line::from(vec![
-                            Span::styled("⚡ Active App: ", Style::default().fg(Color::DarkGray)),
-                        ]),
-                        Line::from(vec![
-                            Span::styled(format!("   {}", running_app), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                        ]),
-                        Line::from(""),
-                        Line::from(vec![
-                            Span::styled("⌨  Typing Speed: ", Style::default().fg(Color::DarkGray)),
-                        ]),
-                        Line::from(vec![
-                            Span::styled(format!("   {} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                        ]),
+                    let profile_content = vec![
+                        Line::from(vec![Span::styled("👤 Nama : ", Style::default().fg(Color::DarkGray)), Span::styled("Alex Ratatui", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("📞 Telp : ", Style::default().fg(Color::DarkGray)), Span::styled("+62 812-3456-7890", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("⚥ Genders: ", Style::default().fg(Color::DarkGray)), Span::styled("Laki-laki", Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("📸 IG   : ", Style::default().fg(Color::DarkGray)), Span::styled("@alex.dev", Style::default().fg(Color::Magenta))]),
+                        Line::from(vec![Span::styled("🐙 GH   : ", Style::default().fg(Color::DarkGray)), Span::styled("github.com/alex", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("📘 FB   : ", Style::default().fg(Color::DarkGray)), Span::styled("fb.com/alex.dev", Style::default().fg(Color::Blue))]),
                     ];
-                    let focus_para = Paragraph::new(focus_content).block(focus_block);
-                    f.render_widget(focus_para, focus_chunks[0]);
+                    f.render_widget(Paragraph::new(profile_content).block(profile_block), profile_chunks[0]);
 
-                    let session_block = Block::bordered().title(Span::styled(
-                        " Session Duration ",
+                    let bio_block = Block::bordered().title(Span::styled(
+                        " Bio & Motivasi ",
                         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                     ));
+                    let bio_content = vec![
+                        Line::from(Span::styled("“Building robust systems & shipping clean Rust code every single day.”", Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))),
+                        Line::from(""),
+                        Line::from(Span::styled("Status: 🚀 Deep Focus Mode", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+                    ];
+                    f.render_widget(Paragraph::new(bio_content).block(bio_block), profile_chunks[1]);
+
+                    // --- 2. SESI APLIKASI & KONTEKS KERJA / DEV ---
+                    let session_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(8),  // Sesi Aplikasi Saat Ini & Durasi
+                            Constraint::Length(7),  // Khusus Developer / Office Status
+                            Constraint::Min(0),     // Timeline / Riwayat Sesi
+                        ])
+                        .split(main_layout[1]);
+
+                    let session_duration = session_start_time.elapsed().as_secs();
                     let session_time_str = format!(
                         "{:02}:{:02}:{:02}",
-                        uptime_secs / 3600,
-                        (uptime_secs % 3600) / 60,
-                        uptime_secs % 60
+                        session_duration / 3600,
+                        (session_duration % 3600) / 60,
+                        session_duration % 60
                     );
-                    let session_para = Paragraph::new(vec![
-                        Line::from(""),
-                        Line::from(Span::styled(
-                            format!("     ⏳ {}", session_time_str),
-                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                        )),
-                    ])
-                    .block(session_block);
-                    f.render_widget(session_para, focus_chunks[1]);
 
-                    let notes_block = Block::bordered().title(Span::styled(
-                        " Current Objective ",
+                    let current_session_block = Block::bordered().title(Span::styled(
+                        " Active Session Context ",
                         Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                     ));
-                    let notes_para = Paragraph::new(vec![
-                        Line::from(Span::styled("• Building Rust TUI", Style::default().fg(Color::Green))),
-                        Line::from(Span::styled("• Reviewing Activity View", Style::default().fg(Color::DarkGray))),
-                        Line::from(Span::styled("• Code refactoring", Style::default().fg(Color::DarkGray))),
-                    ])
-                    .block(notes_block);
-                    f.render_widget(notes_para, focus_chunks[2]);
+                    let current_session_content = vec![
+                        Line::from(vec![Span::styled("💻 App: ", Style::default().fg(Color::DarkGray)), Span::styled(running_app.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("⏱️ Durasi Sesi: ", Style::default().fg(Color::DarkGray)), Span::styled(session_time_str, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("🎯 Aktivitas: ", Style::default().fg(Color::DarkGray)), Span::styled(current_session_activity.clone(), Style::default().fg(Color::Cyan))]),
+                    ];
+                    f.render_widget(Paragraph::new(current_session_content).block(current_session_block), session_chunks[0]);
 
-                    // --- 2. TIMELINE / ACTIVITY STREAM ---
+                    // Khusus Developer (VS Code/Nvim) atau Office (Excel/Word)
+                    let special_status_block = Block::bordered().title(Span::styled(
+                        " Work & Code Insight ",
+                        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                    ));
+                    let special_content = if running_app.to_lowercase().contains("code") || running_app.to_lowercase().contains("nvim") {
+                        vec![
+                            Line::from(vec![Span::styled("🛠️ Mode: ", Style::default().fg(Color::DarkGray)), Span::styled("Software Development (IDE)", Style::default().fg(Color::Green))]),
+                            Line::from(vec![Span::styled("🔤 Bahasa Utama: ", Style::default().fg(Color::DarkGray)), Span::styled("Rust / TypeScript", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+                            Line::from(vec![Span::styled("📦 Status Project: ", Style::default().fg(Color::DarkGray)), Span::styled("Compiling & Testing...", Style::default().fg(Color::Yellow))]),
+                        ]
+                    } else if running_app.to_lowercase().contains("excel") || running_app.to_lowercase().contains("word") {
+                        vec![
+                            Line::from(vec![Span::styled("📊 Mode: ", Style::default().fg(Color::DarkGray)), Span::styled("Formal Office / Dokumen", Style::default().fg(Color::Blue))]),
+                            Line::from(vec![Span::styled("📋 Status Kerja: ", Style::default().fg(Color::DarkGray)), Span::styled("Menyusun Laporan & Analisis", Style::default().fg(Color::White))]),
+                        ]
+                    } else {
+                        vec![
+                            Line::from(vec![Span::styled("🌐 Status: ", Style::default().fg(Color::DarkGray)), Span::styled("General Activity / Multitasking", Style::default().fg(Color::DarkGray))]),
+                        ]
+                    };
+                    f.render_widget(Paragraph::new(special_content).block(special_status_block), session_chunks[1]);
+
+                    // Timeline Riwayat Aplikasi
                     let timeline_block = Block::bordered().title(Span::styled(
-                        " App Timeline Stream ",
+                        " Session History Stream ",
                         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                     ));
                     let timeline_items: Vec<ListItem> = window_history
@@ -354,42 +394,41 @@ async fn main() -> Result<()> {
                             ]))
                         })
                         .collect();
-                    let timeline_list = List::new(timeline_items).block(timeline_block);
-                    f.render_widget(timeline_list, main_layout[1]);
+                    f.render_widget(List::new(timeline_items).block(timeline_block), session_chunks[2]);
 
-                    // --- 3. INSIGHTS & CATEGORY BREAKDOWN ---
-                    let insight_chunks = Layout::default()
+                    // --- 3. GENERAL HARDWARE & METRICS (BATTERY, WIFI, AUDIO, WPM, AKURASI) ---
+                    let metrics_chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(6), // Focus score gauge
-                            Constraint::Min(0),    // Activity Categories
+                            Constraint::Length(8),  // WPM & Typing Accuracy
+                            Constraint::Min(0),     // System Environment (Battery, WiFi, Audio)
                         ])
                         .split(main_layout[2]);
 
-                    let focus_gauge = Gauge::default()
-                        .block(Block::bordered().title(Span::styled(
-                            " Focus Score ",
-                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                        )))
-                        .gauge_style(Style::default().fg(Color::Green))
-                        .percent(88)
-                        .label(Span::styled("88% (High)", Style::default().add_modifier(Modifier::BOLD)));
-                    f.render_widget(focus_gauge, insight_chunks[0]);
-
-                    let categories_block = Block::bordered().title(Span::styled(
-                        " Time Distribution ",
+                    let typing_block = Block::bordered().title(Span::styled(
+                        " Typing Performance ",
                         Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
                     ));
-                    let categories_para = Paragraph::new(vec![
-                        Line::from(Span::styled("💻 Development : 65%", Style::default().fg(Color::Cyan))),
-                        Line::from(Span::styled("🌐 Browsing    : 20%", Style::default().fg(Color::Yellow))),
-                        Line::from(Span::styled("💬 Messaging   : 10%", Style::default().fg(Color::Green))),
-                        Line::from(Span::styled("📂 Other       : 5%", Style::default().fg(Color::DarkGray))),
-                        Line::from(""),
-                        Line::from(Span::styled("Tip: Stay focused!", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))),
-                    ])
-                    .block(categories_block);
-                    f.render_widget(categories_para, insight_chunks[1]);
+                    let typing_content = vec![
+                        Line::from(vec![Span::styled("⚡ Kecepatan: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} WPM", wpm_score), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))]),
+                        Line::from(vec![Span::styled("🎯 Akurasi  : ", Style::default().fg(Color::DarkGray)), Span::styled("98.5% (High)", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("⌨️ Raw Speed: ", Style::default().fg(Color::DarkGray)), Span::styled(format!("{} CPM", wpm_score * 5), Style::default().fg(Color::White))]),
+                    ];
+                    f.render_widget(Paragraph::new(typing_content).block(typing_block), metrics_chunks[0]);
+
+                    let sys_env_block = Block::bordered().title(Span::styled(
+                        " System Environment ",
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    ));
+                    let wifi_ssid = wifi_snapshot.as_ref().map(|s| s.soft_ssid.clone()).unwrap_or_else(|| "Not connected".to_string());
+                    let wifi_tp = wifi_snapshot.as_ref().map(|s| format!("{:.1} Mbps", s.hard_throughput)).unwrap_or_else(|| "0 Mbps".to_string());
+                    let sys_env_content = vec![
+                        Line::from(vec![Span::styled("🔋 Baterai  : ", Style::default().fg(Color::DarkGray)), Span::styled("85% (Charging)", Style::default().fg(Color::Green))]),
+                        Line::from(vec![Span::styled("📶 WiFi     : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_ssid, Style::default().fg(Color::Cyan))]),
+                        Line::from(vec![Span::styled("🚀 Speed    : ", Style::default().fg(Color::DarkGray)), Span::styled(wifi_tp, Style::default().fg(Color::White))]),
+                        Line::from(vec![Span::styled("🔊 Audio    : ", Style::default().fg(Color::DarkGray)), Span::styled("Unmuted (65% Vol)", Style::default().fg(Color::Yellow))]),
+                    ];
+                    f.render_widget(Paragraph::new(sys_env_content).block(sys_env_block), metrics_chunks[1]);
                 }
                 ActiveTab::Performance => {
                     let sections = Layout::default()
